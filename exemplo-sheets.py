@@ -52,25 +52,45 @@ def load_data_from_gsheets():
         worksheet = sh.worksheet(worksheet_name)
 
         # 4. Ler os dados para um DataFrame
-        df_sheet = get_dataframe(worksheet, header=1)
+        # OBS: get_dataframe assume a primeira linha como cabeçalho por padrão.
+        df_sheet = get_dataframe(worksheet, header=1) 
 
         # Limpeza e conversão de tipos (essencial após a leitura da planilha)
         df_sheet.dropna(how='all', inplace=True)
         
         # Converte 'Data' para o formato de data
-        df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], errors='coerce')
+        # Adicionei 'format=...' para ajudar a conversão se o formato for conhecido (opcional, mas bom)
+        try:
+            df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], errors='coerce')
+        except ValueError:
+            st.warning("Não foi possível converter a coluna 'Data' automaticamente. Verifique o formato na planilha.")
+            df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
         
         # Converte colunas numéricas, lidando com possíveis erros
         df_sheet['Total'] = pd.to_numeric(df_sheet['Total'], errors='coerce')
+        # Quantidade pode ser um inteiro que permite NaNs
         df_sheet['Quantity'] = pd.to_numeric(df_sheet['Quantity'], errors='coerce').astype('Int64')
 
         # Remove linhas com 'Data' inválida após a conversão
         df_sheet.dropna(subset=['Data', 'Total', 'Quantity'], inplace=True)
+        
+        # Remove linhas onde a data é NaT (Not a Time)
+        df_sheet.dropna(subset=['Data'], inplace=True)
+
 
         return df_sheet
 
+    except KeyError as e:
+        # Erro específico se o st.secrets estiver faltando uma chave
+        st.error(f"Erro de Configuração: A chave '{e}' está faltando no arquivo secrets.toml. Verifique suas credenciais e a URL/nome da planilha.")
+        st.stop()
+    except gspread.exceptions.APIError as e:
+        # Erro específico se a Service Account não tiver acesso
+        st.error(f"Erro de Permissão do Google Sheets (APIError): Verifique se o e-mail da sua Service Account tem permissão de 'Leitor' na planilha.")
+        st.stop()
     except Exception as e:
-        st.error(f"Erro ao carregar dados do Google Sheets. Verifique o arquivo secrets.toml, a URL da planilha e o compartilhamento com a Service Account: {e}")
+        # Erro genérico de conexão/processamento
+        st.error(f"Erro crítico ao carregar dados. Detalhes: {type(e).__name__}: {e}")
         st.stop()
         return pd.DataFrame()
 
@@ -172,8 +192,8 @@ st.title("Relatório Diário de Vendas com Variações (Google Sheets)")
 
 # Verificação de dados
 if df.empty or 'Data' not in df.columns:
-    if not st.error: # Evita sobrepor a mensagem de erro da função load_data_from_gsheets
-        st.info("O DataFrame está vazio ou a coluna 'Data' não foi encontrada. Verifique sua planilha.")
+    # A mensagem de erro da função load_data_from_gsheets já foi exibida se houve falha na conexão.
+    st.info("O DataFrame está vazio ou a coluna 'Data' não foi encontrada. Verifique sua planilha e a aba configurada.")
     st.stop()
 
 
