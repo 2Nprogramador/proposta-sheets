@@ -275,15 +275,27 @@ if not valid_indices.empty:
 
 
 # Condição 3: Método de pagamento "Pix" com aumento superior a 30% (positivo)
+# CORREÇÃO: Usar 'in' para verificar a existência do índice antes de acessar com .loc
 if "Pix" in relatorio['total_por_payment'].index:
     total_pix = relatorio['total_por_payment'].loc["Pix", "Total"]
-    variacao_pix = relatorio['variacao_payment'].loc["Pix", "Total"]
-    total_anterior_pix = total_pix - variacao_pix
     
-    if total_anterior_pix > 0:
-        variacao_perc = (variacao_pix / total_anterior_pix) * 100
-        if variacao_perc > 30:
-            alertas_positivos.append(f"O método de pagamento **Pix** apresentou um aumento superior a 30% ({variacao_perc:.1f}%) nas vendas.")
+    # Acessar a variação somente se o índice "Pix" existir no DataFrame de variação
+    if "Pix" in relatorio['variacao_payment'].index:
+        variacao_pix = relatorio['variacao_payment'].loc["Pix", "Total"]
+    else:
+        # Se for o primeiro dia ou por algum motivo a variação não foi calculada, assumimos 0
+        # (mas o primeiro dia já garante que a variação será NaN, que é tratado abaixo)
+        variacao_pix = 0
+        
+    
+    # Se a variação for NaN (primeiro dia), a condição não será satisfeita.
+    if pd.notna(variacao_pix):
+        total_anterior_pix = total_pix - variacao_pix
+        
+        if total_anterior_pix > 0:
+            variacao_perc = (variacao_pix / total_anterior_pix) * 100
+            if variacao_perc > 30:
+                alertas_positivos.append(f"O método de pagamento **Pix** apresentou um aumento superior a 30% ({variacao_perc:.1f}%) nas vendas.")
 
 # Condição 4: Produtos vendidos mais de 400 vezes (positivo)
 produtos_acima_400 = relatorio['total_por_linha_produto'][relatorio['total_por_linha_produto']['Quantity'] > 400]
