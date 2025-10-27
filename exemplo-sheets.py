@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly
 import gspread # Biblioteca para interagir com a Google Sheets API
 from gspread.exceptions import WorksheetNotFound, APIError # Importações explícitas para tratamento de erros
+import datetime # ADICIONADO: Necessário para usar datetime.datetime
 
 
 # --- INSTRUÇÕES PARA CONFIGURAÇÃO DE CREDENCIAIS NO STREAMLIT CLOUD ---
@@ -111,7 +112,8 @@ def relatorio_por_dia_com_variacoes(dia, data_df):
     Gera o relatório diário e calcula variações em relação ao dia anterior.
     """
     # Converter o objeto date para Timestamp para comparação correta
-    if isinstance(dia, (pd.Timestamp, pd.datetime)):
+    # CORRIGIDO: Substituído 'pd.datetime' por 'datetime.datetime'
+    if isinstance(dia, (pd.Timestamp, datetime.datetime)):
         dia_date = dia.date()
     else:
         dia_date = dia
