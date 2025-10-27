@@ -121,11 +121,23 @@ def relatorio_por_dia_com_variacoes(dia, data_df):
     dia_anterior_timestamp = dia_timestamp - pd.Timedelta(days=1)
 
     # Filtragem de dados para o dia atual e o dia anterior
-    df_dia = data_df[data_df['Data'].dt.date == dia_date]
-    df_dia_anterior = data_df[data_df['Data'].dt.date == dia_anterior_timestamp.date()]
+    df_dia = data_df[data_df['Data'].dt.date == dia_date].copy()
+    df_dia_anterior = data_df[data_df['Data'].dt.date == dia_anterior_timestamp.date()].copy()
 
     if df_dia.empty:
         return {}
+    
+    # --- AJUSTE 1: FILTRAGEM DE LINHAS DE TOTAL/QUANTITY NA FONTE ---
+    # Isso evita que linhas manuais de resumo na planilha sejam tratadas como categorias.
+    for col in ['City', 'Customer type', 'Gender', 'Product line', 'Payment']:
+        if col in df_dia.columns:
+            df_dia = df_dia[~df_dia[col].astype(str).str.lower().isin(['total', 'quantity'])]
+        if col in df_dia_anterior.columns:
+            df_dia_anterior = df_dia_anterior[~df_dia_anterior[col].astype(str).str.lower().isin(['total', 'quantity'])]
+
+    if df_dia.empty:
+        return {}
+
     
     # --- NOVO BLOCO DE TRATAMENTO PARA O PRIMEIRO DIA ---
     is_first_day_with_data = df_dia_anterior.empty and not df_dia.empty
@@ -137,9 +149,10 @@ def relatorio_por_dia_com_variacoes(dia, data_df):
         total_atual = df_atual.groupby(coluna_agrupadora)[['Total', 'Quantity']].sum()
         
         if is_first_day_with_data:
-            # Se for o primeiro dia, a variação é NaN (nula), exceto para o índice dos totais
+            # Se for o primeiro dia, a variação é NaN (nula).
             # Criamos um DataFrame de NaN com os mesmos índices e colunas de total_atual
-            variacao = total_atual.apply(lambda x: pd.Series([pd.NA, pd.NA], index=['Total', 'Quantity']), axis=0)
+            # Usamos pd.NA para valores nulos em colunas que podem ser inteiros (como Quantity)
+            variacao = pd.DataFrame(pd.NA, index=total_atual.index, columns=total_atual.columns, dtype=float)
             return total_atual, variacao
             
         else:
@@ -148,11 +161,13 @@ def relatorio_por_dia_com_variacoes(dia, data_df):
             
             # Alinha os DataFrames para a subtração, preenchendo novos grupos com 0
             base_index = total_atual.index.union(total_anterior.index)
-            total_atual = total_atual.reindex(base_index, fill_value=0)
-            total_anterior = total_anterior.reindex(base_index, fill_value=0)
+            total_atual_reindex = total_atual.reindex(base_index, fill_value=0)
+            total_anterior_reindex = total_anterior.reindex(base_index, fill_value=0)
             
-            variacao = total_atual - total_anterior
-            return total_atual, variacao
+            variacao = total_atual_reindex - total_anterior_reindex
+            
+            # Garantir que o Total atual retorne apenas as categorias existentes no dia atual + dia anterior
+            return total_atual_reindex, variacao
 
 
     total_por_cidade, variacao_cidade = calcular_totais_e_variacao(df_dia, df_dia_anterior, 'City')
@@ -167,6 +182,7 @@ def relatorio_por_dia_com_variacoes(dia, data_df):
     # FUNÇÃO CORRIGIDA: Usa groupby().value_counts().unstack() que é mais robusta
     def calcular_crosstab_e_variacao(df_atual, df_anterior, index_cols, col_cols):
         # Cria a tabela de contagem de forma robusta
+        # Usamos .stack().unstack() para garantir que os índices compostos sejam tratados
         atual = df_atual.groupby(index_cols)[col_cols].value_counts().unstack(fill_value=0)
         
         if is_first_day_with_data:
@@ -351,8 +367,9 @@ def style_dataframe(df_input):
         # A formatação lambda anterior era complexa e desnecessária, pois já sabemos que é o primeiro dia.
         # Formatamos a variação como uma string literal "N/A"
         var_format_dict = {
-            "Var. Total": lambda x: "N/A" if pd.notna(x) else "-",
-            "Var. Quantity": lambda x: "N/A" if pd.notna(x) else "-"
+            # Use pd.isna para NaN/NA
+            "Var. Total": lambda x: "N/A" if pd.isna(x) else ("R${:+.2f}".format(x) if pd.notna(x) else "-"),
+            "Var. Quantity": lambda x: "N/A" if pd.isna(x) else ("{:+.0f}".format(x) if pd.notna(x) else "-")
         }
     
     # Junta todos os dicionários de formato
