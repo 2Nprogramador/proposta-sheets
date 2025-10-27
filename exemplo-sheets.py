@@ -126,20 +126,33 @@ def relatorio_por_dia_com_variacoes(dia, data_df):
 
     if df_dia.empty:
         return {}
+    
+    # --- NOVO BLOCO DE TRATAMENTO PARA O PRIMEIRO DIA ---
+    is_first_day_with_data = df_dia_anterior.empty and not df_dia.empty
+    # ---------------------------------------------------
 
 
     # Função auxiliar para calcular totais e reindexar para a variação
     def calcular_totais_e_variacao(df_atual, df_anterior, coluna_agrupadora):
         total_atual = df_atual.groupby(coluna_agrupadora)[['Total', 'Quantity']].sum()
-        total_anterior = df_anterior.groupby(coluna_agrupadora)[['Total', 'Quantity']].sum()
         
-        # Alinha os DataFrames para a subtração, preenchendo novos grupos com 0
-        base_index = total_atual.index.union(total_anterior.index)
-        total_atual = total_atual.reindex(base_index, fill_value=0)
-        total_anterior = total_anterior.reindex(base_index, fill_value=0)
-        
-        variacao = total_atual - total_anterior
-        return total_atual, variacao
+        if is_first_day_with_data:
+            # Se for o primeiro dia, a variação é NaN (nula), exceto para o índice dos totais
+            variacao = total_atual.apply(lambda x: pd.Series([pd.NA, pd.NA], index=['Total', 'Quantity']), axis=0)
+            return total_atual, variacao
+            
+        else:
+            # Lógica normal para os dias seguintes (com dia anterior)
+            total_anterior = df_anterior.groupby(coluna_agrupadora)[['Total', 'Quantity']].sum()
+            
+            # Alinha os DataFrames para a subtração, preenchendo novos grupos com 0
+            base_index = total_atual.index.union(total_anterior.index)
+            total_atual = total_atual.reindex(base_index, fill_value=0)
+            total_anterior = total_anterior.reindex(base_index, fill_value=0)
+            
+            variacao = total_atual - total_anterior
+            return total_atual, variacao
+
 
     total_por_cidade, variacao_cidade = calcular_totais_e_variacao(df_dia, df_dia_anterior, 'City')
     total_por_tipo_cliente, variacao_tipo_cliente = calcular_totais_e_variacao(df_dia, df_dia_anterior, 'Customer type')
@@ -154,18 +167,24 @@ def relatorio_por_dia_com_variacoes(dia, data_df):
     def calcular_crosstab_e_variacao(df_atual, df_anterior, index_cols, col_cols):
         # Cria a tabela de contagem de forma robusta
         atual = df_atual.groupby(index_cols)[col_cols].value_counts().unstack(fill_value=0)
-        anterior = df_anterior.groupby(index_cols)[col_cols].value_counts().unstack(fill_value=0)
         
-        # Alinha os índices (linhas) e colunas
-        idx = atual.index.union(anterior.index)
-        cols = atual.columns.union(anterior.columns)
-        
-        atual_reindex = atual.reindex(index=idx, columns=cols, fill_value=0)
-        anterior_reindex = anterior.reindex(index=idx, columns=cols, fill_value=0)
-        
-        variacao = atual_reindex - anterior_reindex
-        
-        return atual, variacao
+        if is_first_day_with_data:
+            # Se for o primeiro dia, a variação é uma tabela do mesmo tamanho, mas preenchida com NaN
+            variacao = atual.applymap(lambda x: pd.NA)
+            return atual, variacao
+        else:
+            anterior = df_anterior.groupby(index_cols)[col_cols].value_counts().unstack(fill_value=0)
+            
+            # Alinha os índices (linhas) e colunas
+            idx = atual.index.union(anterior.index)
+            cols = atual.columns.union(anterior.columns)
+            
+            atual_reindex = atual.reindex(index=idx, columns=cols, fill_value=0)
+            anterior_reindex = anterior.reindex(index=idx, columns=cols, fill_value=0)
+            
+            variacao = atual_reindex - anterior_reindex
+            
+            return atual, variacao
 
     # Usando Quantity (Count de Transações) para os crosstabs
     crosstab_cidade_tipo_cliente, variacao_cidade_tipo_cliente = calcular_crosstab_e_variacao(df_dia, df_dia_anterior, 'City', 'Customer type')
@@ -343,6 +362,7 @@ def plot_total_and_variation(df_total, df_var, id_col, title):
     df_concat = pd.concat([df_total.round(2), df_var_renamed.round(2)], axis=1).reset_index()
     
     # 2. Reformatar (melt) para que Total, Var. Total, Quantity, Var. Quantity sejam linhas
+    # Usamos .dropna() para remover os NaNs do primeiro dia, o que retira as barras do gráfico.
     df_plot = df_concat.melt(
         id_vars=id_col, 
         value_vars=['Total', 'Var. Total', 'Quantity', 'Var. Quantity'], 
@@ -359,7 +379,6 @@ def plot_total_and_variation(df_total, df_var, id_col, title):
     }
 
     # Cria o gráfico de barras interativo (Plotly Express)
-    # Removemos facet_col para combinar tudo em um único gráfico
     fig = px.bar(
         df_plot, 
         x=id_col, 
