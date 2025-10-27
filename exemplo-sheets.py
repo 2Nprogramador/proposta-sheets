@@ -299,33 +299,37 @@ st.subheader(f"Relatório Detalhado de Vendas para o dia {dia_selecionado}")
 col1, col2 = st.columns(2) # Reduzido para 2 colunas para melhor layout
 
 # Estilo para DataFrames (opcional, mas melhora a visualização)
-# CORRIGIDO: Adicionado lógica para formatar a variação como N/A se for o primeiro dia
+# CORRIGIDO: Formatação revisada para evitar erros de lambda e Accessor Error.
 def style_dataframe(df_input):
     # Verifica se o dia selecionado é o primeiro dia do dataset
     is_first_day = (dia_selecionado == primeiro_dia_disponivel)
     
-    df_styled = df_input.style.format({
+    # Formatos padrão para colunas que NÃO são variação
+    format_dict = {
         "Total": "R${:.2f}", 
         "Quantity": "{:.0f}"
-    }, na_rep="-")
-    
-    # Aplica a formatação condicional para as colunas de Variação
-    var_total_col = "Var. Total"
-    var_quantity_col = "Var. Quantity"
+    }
 
-    # Se for o primeiro dia, formata as colunas de variação como 'N/A'
+    # Formatos padrão para colunas de variação (incluindo o sinal)
+    var_format_dict = {
+        "Var. Total": "R${:+.2f}", 
+        "Var. Quantity": "{:+.0f}"
+    }
+    
+    # Se for o primeiro dia, sobrescreve o formato de variação com 'N/A' literal.
     if is_first_day:
-        df_styled = df_styled.format({
-            var_total_col: lambda x: "N/A" if x == df_input["Total"][df_input[var_total_col].index.get_loc(x.name)] else "R${:+.2f}".format(x) if pd.notna(x) else "-",
-            var_quantity_col: lambda x: "N/A" if x == df_input["Quantity"][df_input[var_quantity_col].index.get_loc(x.name)] else "{:+.0f}".format(x) if pd.notna(x) else "-"
-        }, subset=[var_total_col, var_quantity_col])
-    else:
-        # Se NÃO for o primeiro dia, usa a formatação normal de variação
-        df_styled = df_styled.format({
-            var_total_col: "R${:+.2f}", 
-            var_quantity_col: "{:+.0f}"
-        }, na_rep="-", subset=[var_total_col, var_quantity_col])
-        
+        # A formatação lambda anterior era complexa e desnecessária, pois já sabemos que é o primeiro dia.
+        # Formatamos a variação como uma string literal "N/A"
+        var_format_dict = {
+            "Var. Total": lambda x: "N/A" if pd.notna(x) else "-",
+            "Var. Quantity": lambda x: "N/A" if pd.notna(x) else "-"
+        }
+    
+    # Junta todos os dicionários de formato
+    format_dict.update(var_format_dict)
+
+    df_styled = df_input.style.format(format_dict, na_rep="-")
+    
     return df_styled
 
 
