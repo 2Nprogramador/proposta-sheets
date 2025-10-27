@@ -150,9 +150,9 @@ def relatorio_por_dia_com_variacoes(dia, data_df):
         
         if is_first_day_with_data:
             # Se for o primeiro dia, a variação é NaN (nula).
-            # Criamos um DataFrame de NaN com os mesmos índices e colunas de total_atual
-            # Usamos pd.NA para valores nulos em colunas que podem ser inteiros (como Quantity)
-            variacao = pd.DataFrame(pd.NA, index=total_atual.index, columns=total_atual.columns, dtype=float)
+            # CORREÇÃO: Cria uma cópia do DF e preenche com pd.NA para evitar o TypeError
+            variacao = total_atual.copy()
+            variacao[:] = pd.NA 
             return total_atual, variacao
             
         else:
