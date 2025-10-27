@@ -330,10 +330,11 @@ def style_dataframe(df_input):
     
     return df_styled
 
-# --- FUNÇÃO AUXILIAR PARA PLOTAGEM COM VARIAÇÃO (AGORA INCLUI QUANTIDADE) ---
+# --- FUNÇÃO AUXILIAR PARA PLOTAGEM COM VARIAÇÃO (CORRIGIDA PARA UM ÚNICO GRÁFICO DE 4 BARRAS) ---
 def plot_total_and_variation(df_total, df_var, id_col, title):
     """
-    Cria um DataFrame combinado e plota o Total, Quantidade e suas Variações.
+    Cria um DataFrame combinado e plota o Total, Quantidade e suas Variações
+    em um único gráfico de barras agrupadas.
     """
     # 1. Renomeia as colunas de variação e junta os DataFrames
     df_var_renamed = df_var.rename(
@@ -342,7 +343,6 @@ def plot_total_and_variation(df_total, df_var, id_col, title):
     df_concat = pd.concat([df_total.round(2), df_var_renamed.round(2)], axis=1).reset_index()
     
     # 2. Reformatar (melt) para que Total, Var. Total, Quantity, Var. Quantity sejam linhas
-    # Usando todas as colunas relevantes no melt
     df_plot = df_concat.melt(
         id_vars=id_col, 
         value_vars=['Total', 'Var. Total', 'Quantity', 'Var. Quantity'], 
@@ -350,36 +350,33 @@ def plot_total_and_variation(df_total, df_var, id_col, title):
         value_name='Valor'
     ).dropna(subset=['Valor'])
     
-    # Adicionar coluna para agrupar as barras por tipo de métrica (Vendas vs. Quantidade)
-    df_plot['Tipo'] = df_plot['Métrica'].apply(lambda x: 'Vendas (R$)' if 'Total' in x else 'Quantidade')
-    df_plot['Medida'] = df_plot['Métrica'].apply(lambda x: 'Total' if 'Var.' not in x else 'Variação')
-
+    # 3. Cria o mapeamento de cores exato como na imagem (Total, Quantity, Var. Total, Var. Quantity)
+    color_map = {
+        'Total': 'rgb(76, 120, 168)',         # Azul Claro/Padrão (Para Total)
+        'Quantity': 'rgb(30, 60, 100)',       # Azul Escuro (Para Quantity)
+        'Var. Total': 'rgb(228, 87, 86)',     # Vermelho Claro/Salmão (Para Var. Total)
+        'Var. Quantity': 'rgb(190, 40, 40)'   # Vermelho Escuro (Para Var. Quantity)
+    }
 
     # Cria o gráfico de barras interativo (Plotly Express)
-    # Usamos `Tipo` para faceting (separação em subplots) e `Medida` para agrupar as barras.
+    # Removemos facet_col para combinar tudo em um único gráfico
     fig = px.bar(
         df_plot, 
         x=id_col, 
         y='Valor', 
-        color='Medida', # Agrupamento principal (Total vs Variação)
+        color='Métrica', # Cor baseada nas 4 métricas (Total, Var. Total, Quantity, Var. Quantity)
         barmode='group', 
-        facet_col='Tipo', # Subplots (Vendas vs Quantidade)
         title=f"{title} - Total, Quantidade e Variação",
-        template='plotly_white',
-        color_discrete_map={
-            'Total': '#4C78A8',        # Azul para totais
-            'Variação': '#E45756'      # Vermelho para variações
-        }
+        template='plotly_white', # Pode ser alterado para 'plotly_dark' se preferir o fundo escuro da imagem
+        color_discrete_map=color_map,
+        labels={'Métrica': 'Variável'} # Renomeia a legenda para 'Variável'
     )
     
     # Configurações do layout
     fig.update_layout(height=450, title_x=0.5)
     
-    # Adiciona a linha zero para melhor visualização da variação (apenas no subplot de Quantidade/Vendas)
-    fig.for_each_xaxis(lambda axis: axis.update(title_text=''))
-    
-    # Adiciona linha zero nos dois subplots
-    fig.add_hline(y=0, line_dash="dash", line_color="gray", row="all", col="all")
+    # Adiciona a linha zero para melhor visualização da variação
+    fig.add_hline(y=0, line_dash="dash", line_color="gray")
     
     return fig
 
