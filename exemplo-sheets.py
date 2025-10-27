@@ -2,30 +2,12 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 import plotly
-import gspread # Biblioteca para interagir com a Google Sheets API
-from gspread.exceptions import WorksheetNotFound, APIError # Importações explícitas para tratamento de erros
-import datetime # ADICIONADO: Necessário para usar datetime.datetime
+import gspread 
+from gspread.exceptions import WorksheetNotFound, APIError 
+import datetime 
 
 
-# --- INSTRUÇÕES PARA CONFIGURAÇÃO DE CREDENCIAIS NO STREAMLIT CLOUD ---
-#
-# Para funcionar, você DEVE configurar um arquivo chamado '.streamlit/secrets.toml'
-# no seu repositório ou diretamente no painel de Configurações do Streamlit Cloud.
-#
-# O erro "WorksheetNotFound: proposta-vendas" indica que o valor de `worksheet_name`
-# no secrets.toml não corresponde EXATAMENTE ao nome da aba na sua planilha.
-# VERIFIQUE A ABA: Se a aba se chamar, por exemplo, "Proposta-vendas" (com 'P' maiúsculo)
-# ou "Sheet1", você deve atualizar o secrets.toml com o nome correto.
-#
-# Exemplo do seu secrets.toml, que precisa de conferência na linha 2:
-# [gsheets]
-# url = "URL_COMPLETA_DA_SUA_PLANILHA"
-# worksheet_name = "Dados" # <-- CONFIRA SE ESTE NOME ESTÁ CORRETO
-#
-# [gcp_service_account]
-# # ... (adicione todos os outros campos do JSON da Service Account aqui)
-#
-# OBS: O bloco [gcp_service_account] DEVE conter exatamente os mesmos campos do seu arquivo JSON de credenciais.
+
 
 
 @st.cache_data(ttl=600) # Cache para recarregar os dados a cada 600 segundos (10 minutos)
