@@ -3,8 +3,9 @@ import streamlit as st
 import plotly.express as px
 import plotly
 import gspread # Biblioteca para interagir com a Google Sheets API
-from gspread_dataframe import get_dataframe # Para converter a planilha em DataFrame
-import json # Para lidar com as credenciais (embora gspread faça a conversão do dict)
+# A biblioteca 'gspread_dataframe' foi removida para resolver o ImportError.
+# As operações de conversão de dados agora são feitas diretamente com 'gspread' e 'pandas'.
+
 
 # --- INSTRUÇÕES PARA CONFIGURAÇÃO DE CREDENCIAIS NO STREAMLIT CLOUD ---
 #
@@ -36,7 +37,8 @@ import json # Para lidar com as credenciais (embora gspread faça a conversão d
 def load_data_from_gsheets():
     """
     Carrega os dados da Google Sheet usando as credenciais da Service Account
-    armazenadas em st.secrets e retorna um DataFrame.
+    armazenadas em st.secrets e retorna um DataFrame. Usa get_all_records()
+    para evitar a dependência de gspread_dataframe.
     """
     try:
         # 1. Obter as credenciais da Service Account e URL do st.secrets
@@ -49,17 +51,19 @@ def load_data_from_gsheets():
 
         # 3. Abrir a planilha e selecionar a aba
         sh = gc.open_by_url(gsheets_url)
+        # O método .worksheet() retorna a aba pelo nome
         worksheet = sh.worksheet(worksheet_name)
 
-        # 4. Ler os dados para um DataFrame
-        # OBS: get_dataframe assume a primeira linha como cabeçalho por padrão.
-        df_sheet = get_dataframe(worksheet, header=1) 
+        # 4. LER OS DADOS E CONVERTER PARA DATAFRAME (Substituição de gspread_dataframe)
+        # get_all_records() retorna uma lista de dicionários, usando a primeira linha como cabeçalho.
+        data = worksheet.get_all_records() 
+        df_sheet = pd.DataFrame.from_records(data)
+
 
         # Limpeza e conversão de tipos (essencial após a leitura da planilha)
         df_sheet.dropna(how='all', inplace=True)
         
         # Converte 'Data' para o formato de data
-        # Adicionei 'format=...' para ajudar a conversão se o formato for conhecido (opcional, mas bom)
         try:
             df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], errors='coerce')
         except ValueError:
