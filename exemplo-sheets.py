@@ -138,6 +138,7 @@ def relatorio_por_dia_com_variacoes(dia, data_df):
         
         if is_first_day_with_data:
             # Se for o primeiro dia, a variação é NaN (nula), exceto para o índice dos totais
+            # Criamos um DataFrame de NaN com os mesmos índices e colunas de total_atual
             variacao = total_atual.apply(lambda x: pd.Series([pd.NA, pd.NA], index=['Total', 'Quantity']), axis=0)
             return total_atual, variacao
             
@@ -371,8 +372,14 @@ def plot_total_and_variation(df_total, df_var, id_col, title):
     df_var_renamed = df_var.rename(
         columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})
     
+    # Concatena os DataFrames e reseta o índice (o nome da coluna de índice será 'index' por padrão)
     df_concat = pd.concat([df_total.round(2), df_var_renamed.round(2)], axis=1).reset_index()
     
+    # **CORREÇÃO APLICADA AQUI**: Garante que a coluna de índice recém-criada seja renomeada para id_col
+    # Se o DataFrame tiver uma coluna chamada 'index' (que é o nome padrão do reset_index()), a renomeamos para id_col.
+    if 'index' in df_concat.columns:
+        df_concat.rename(columns={'index': id_col}, inplace=True)
+        
     # 2. Reformatar (melt) para que Total, Var. Total, Quantity, Var. Quantity sejam linhas
     # Usamos .dropna() para remover os NaNs do primeiro dia, o que retira as barras do gráfico.
     df_plot = df_concat.melt(
