@@ -217,6 +217,9 @@ if not dias_unicos_ordenados:
 # Garantir que a seleção do dia está correta para evitar erros no relatorio_por_dia_com_variacoes
 dia_selecionado = st.sidebar.selectbox("Selecione uma data", dias_unicos_ordenados)
 
+# Variável para checar se é o primeiro dia do dataset
+primeiro_dia_disponivel = dias_unicos_ordenados[-1] 
+
 # Gerando o relatório para o dia selecionado
 relatorio = relatorio_por_dia_com_variacoes(dia_selecionado, df)
 
@@ -296,13 +299,35 @@ st.subheader(f"Relatório Detalhado de Vendas para o dia {dia_selecionado}")
 col1, col2 = st.columns(2) # Reduzido para 2 colunas para melhor layout
 
 # Estilo para DataFrames (opcional, mas melhora a visualização)
+# CORRIGIDO: Adicionado lógica para formatar a variação como N/A se for o primeiro dia
 def style_dataframe(df_input):
-    return df_input.style.format({
+    # Verifica se o dia selecionado é o primeiro dia do dataset
+    is_first_day = (dia_selecionado == primeiro_dia_disponivel)
+    
+    df_styled = df_input.style.format({
         "Total": "R${:.2f}", 
-        "Var. Total": "R${:+.2f}", 
-        "Quantity": "{:.0f}",
-        "Var. Quantity": "{:+.0f}"
+        "Quantity": "{:.0f}"
     }, na_rep="-")
+    
+    # Aplica a formatação condicional para as colunas de Variação
+    var_total_col = "Var. Total"
+    var_quantity_col = "Var. Quantity"
+
+    # Se for o primeiro dia, formata as colunas de variação como 'N/A'
+    if is_first_day:
+        df_styled = df_styled.format({
+            var_total_col: lambda x: "N/A" if x == df_input["Total"][df_input[var_total_col].index.get_loc(x.name)] else "R${:+.2f}".format(x) if pd.notna(x) else "-",
+            var_quantity_col: lambda x: "N/A" if x == df_input["Quantity"][df_input[var_quantity_col].index.get_loc(x.name)] else "{:+.0f}".format(x) if pd.notna(x) else "-"
+        }, subset=[var_total_col, var_quantity_col])
+    else:
+        # Se NÃO for o primeiro dia, usa a formatação normal de variação
+        df_styled = df_styled.format({
+            var_total_col: "R${:+.2f}", 
+            var_quantity_col: "{:+.0f}"
+        }, na_rep="-", subset=[var_total_col, var_quantity_col])
+        
+    return df_styled
+
 
 with col1:
     # Exibição com variações
