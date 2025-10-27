@@ -112,7 +112,6 @@ def relatorio_por_dia_com_variacoes(dia, data_df):
     Gera o relatório diário e calcula variações em relação ao dia anterior.
     """
     # Converter o objeto date para Timestamp para comparação correta
-    # CORRIGIDO: Substituído 'pd.datetime' por 'datetime.datetime'
     if isinstance(dia, (pd.Timestamp, datetime.datetime)):
         dia_date = dia.date()
     else:
@@ -299,7 +298,6 @@ st.subheader(f"Relatório Detalhado de Vendas para o dia {dia_selecionado}")
 col1, col2 = st.columns(2) # Reduzido para 2 colunas para melhor layout
 
 # Estilo para DataFrames (opcional, mas melhora a visualização)
-# CORRIGIDO: Formatação revisada para evitar erros de lambda e Accessor Error.
 def style_dataframe(df_input):
     # Verifica se o dia selecionado é o primeiro dia do dataset
     is_first_day = (dia_selecionado == primeiro_dia_disponivel)
@@ -332,6 +330,51 @@ def style_dataframe(df_input):
     
     return df_styled
 
+# --- FUNÇÃO AUXILIAR PARA PLOTAGEM COM VARIAÇÃO ---
+def plot_total_and_variation(df_total, df_var, id_col, title):
+    """
+    Cria um DataFrame combinado e plota o Total e a Variação juntos.
+    """
+    # 1. Renomeia as colunas de variação e junta os DataFrames
+    df_var_renamed = df_var.rename(
+        columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})
+    
+    df_concat = pd.concat([df_total, df_var_renamed], axis=1).reset_index()
+    
+    # 2. Reformatar (melt) para que Total, Var. Total, Quantity, Var. Quantity sejam linhas
+    # Limitando-se às colunas de vendas (Total e Variação Total) para o gráfico
+    df_plot = df_concat.melt(
+        id_vars=id_col, 
+        value_vars=['Total', 'Var. Total', 'Quantity', 'Var. Quantity'], 
+        var_name='Métrica', 
+        value_name='Valor'
+    ).dropna(subset=['Valor'])
+    
+    # Adicionar coluna para agrupar as barras lado a lado
+    df_plot['Tipo'] = df_plot['Métrica'].apply(lambda x: 'Total' if 'Total' in x else 'Quantidade')
+
+    # Filtrar para plotar apenas as métricas de Vendas e Variação de Vendas no gráfico principal
+    df_vendas = df_plot[df_plot['Métrica'].isin(['Total', 'Var. Total'])]
+    
+    # Cria o gráfico de barras interativo (Plotly Express)
+    fig = px.bar(
+        df_vendas, 
+        x=id_col, 
+        y='Valor', 
+        color='Métrica', 
+        barmode='group', 
+        title=title,
+        template='plotly_white',
+        color_discrete_map={
+            'Total': '#4C78A8',        # Azul padrão
+            'Var. Total': '#E45756'    # Vermelho para variação (bom para negativos)
+        }
+    )
+    # Adiciona a linha zero para melhor visualização da variação
+    fig.add_hline(y=0, line_dash="dash", line_color="gray")
+    
+    return fig
+
 
 with col1:
     # Exibição com variações
@@ -340,9 +383,13 @@ with col1:
         columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
     st.dataframe(style_dataframe(df_cidade_concat), use_container_width=True)
 
-    with st.expander("Gráfico de Total de Vendas por Cidade"):
-        df_plot_cidade = relatorio['total_por_cidade'].reset_index()
-        fig = px.bar(df_plot_cidade, x='City', y='Total', title="Total de Vendas por Cidade")
+    with st.expander("Gráfico de Total de Vendas e Variação por Cidade"):
+        fig = plot_total_and_variation(
+            relatorio['total_por_cidade'].round(2), 
+            relatorio['variacao_cidade'].round(2), 
+            'City', 
+            "Total de Vendas vs. Variação por Cidade"
+        )
         st.plotly_chart(fig, use_container_width=True)
 
 
@@ -351,9 +398,13 @@ with col1:
         columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
     st.dataframe(style_dataframe(df_cliente_concat), use_container_width=True)
 
-    with st.expander("Gráfico de Total de vendas por Tipo de Cliente"):
-        df_plot_cliente = relatorio['total_por_tipo_cliente'].reset_index()
-        fig = px.bar(df_plot_cliente, x='Customer type', y='Total', title="Total de Vendas por Tipo de Cliente")
+    with st.expander("Gráfico de Total de vendas e Variação por Tipo de Cliente"):
+        fig = plot_total_and_variation(
+            relatorio['total_por_tipo_cliente'].round(2), 
+            relatorio['variacao_tipo_cliente'].round(2), 
+            'Customer type', 
+            "Total de Vendas vs. Variação por Tipo de Cliente"
+        )
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("##### Total de vendas por Gênero e Variação:")
@@ -361,9 +412,13 @@ with col1:
         columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
     st.dataframe(style_dataframe(df_genero_concat), use_container_width=True)
 
-    with st.expander("Gráfico de Total de vendas por Gênero"):
-        df_plot_genero = relatorio['total_por_genero'].reset_index()
-        fig = px.bar(df_plot_genero, x='Gender', y='Total', title="Total de Vendas por Gênero")
+    with st.expander("Gráfico de Total de vendas e Variação por Gênero"):
+        fig = plot_total_and_variation(
+            relatorio['total_por_genero'].round(2), 
+            relatorio['variacao_genero'].round(2), 
+            'Gender', 
+            "Total de Vendas vs. Variação por Gênero"
+        )
         st.plotly_chart(fig, use_container_width=True)
 
 with col2:
@@ -372,9 +427,13 @@ with col2:
         columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
     st.dataframe(style_dataframe(df_produto_concat), use_container_width=True)
 
-    with st.expander("Gráfico de vendas por Linha de Produto"):
-        df_plot_produto = relatorio['total_por_linha_produto'].reset_index()
-        fig = px.bar(df_plot_produto, x='Product line', y='Total', title="Total de Vendas por Linha de Produto")
+    with st.expander("Gráfico de Total de vendas e Variação por Linha de Produto"):
+        fig = plot_total_and_variation(
+            relatorio['total_por_linha_produto'].round(2), 
+            relatorio['variacao_linha_produto'].round(2), 
+            'Product line', 
+            "Total de Vendas vs. Variação por Linha de Produto"
+        )
         st.plotly_chart(fig, use_container_width=True)
 
 
@@ -383,9 +442,13 @@ with col2:
         columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
     st.dataframe(style_dataframe(df_payment_concat), use_container_width=True)
 
-    with st.expander("Gráfico de vendas por Método de Pagamento"):
-        df_plot_payment = relatorio['total_por_payment'].reset_index()
-        fig = px.bar(df_plot_payment, x='Payment', y='Total', title="Total de Vendas por Método de Pagamento")
+    with st.expander("Gráfico de Total de vendas e Variação por Método de Pagamento"):
+        fig = plot_total_and_variation(
+            relatorio['total_por_payment'].round(2), 
+            relatorio['variacao_payment'].round(2), 
+            'Payment', 
+            "Total de Vendas vs. Variação por Método de Pagamento"
+        )
         st.plotly_chart(fig, use_container_width=True)
 
     # ------------------ Cross-tabs ------------------
