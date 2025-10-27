@@ -3,8 +3,7 @@ import streamlit as st
 import plotly.express as px
 import plotly
 import gspread # Biblioteca para interagir com a Google Sheets API
-# A biblioteca 'gspread_dataframe' foi removida para resolver o ImportError.
-# As operações de conversão de dados agora são feitas diretamente com 'gspread' e 'pandas'.
+from gspread.exceptions import WorksheetNotFound, APIError # Importações explícitas para tratamento de erros
 
 
 # --- INSTRUÇÕES PARA CONFIGURAÇÃO DE CREDENCIAIS NO STREAMLIT CLOUD ---
@@ -12,22 +11,17 @@ import gspread # Biblioteca para interagir com a Google Sheets API
 # Para funcionar, você DEVE configurar um arquivo chamado '.streamlit/secrets.toml'
 # no seu repositório ou diretamente no painel de Configurações do Streamlit Cloud.
 #
-# 1. Crie uma Conta de Serviço (Service Account) no Google Cloud.
-# 2. Compartilhe sua Google Sheet (Planilha) com o e-mail da Service Account.
-# 3. Baixe o arquivo JSON das credenciais.
-# 4. Crie o arquivo '.streamlit/secrets.toml' e adicione o seguinte conteúdo:
+# O erro "WorksheetNotFound: proposta-vendas" indica que o valor de `worksheet_name`
+# no secrets.toml não corresponde EXATAMENTE ao nome da aba na sua planilha.
+# VERIFIQUE A ABA: Se a aba se chamar, por exemplo, "Proposta-vendas" (com 'P' maiúsculo)
+# ou "Sheet1", você deve atualizar o secrets.toml com o nome correto.
 #
+# Exemplo do seu secrets.toml, que precisa de conferência na linha 2:
 # [gsheets]
-# url = "URL_COMPLETA_DA_SUA_PLANILHA_DO_GOOGLE_SHEETS" # Ex: https://docs.google.com/spreadsheets/d/.../edit
-# worksheet_name = "Sheet1" # Nome da aba/folha que contém os dados (ex: 'Dados de Vendas')
+# url = "URL_COMPLETA_DA_SUA_PLANILHA"
+# worksheet_name = "Dados" # <-- CONFIRA SE ESTE NOME ESTÁ CORRETO
 #
 # [gcp_service_account]
-# type = "service_account"
-# project_id = "SEU_PROJECT_ID"
-# private_key_id = "SUA_PRIVATE_KEY_ID"
-# # A chave privada deve estar em uma única linha, com '\n' para quebras de linha
-# private_key = "-----BEGIN PRIVATE KEY-----\nSUA CHAVE PRIVADA AQUI\n-----END PRIVATE KEY-----\n"
-# client_email = "SUA_SERVICE_ACCOUNT_EMAIL@SEU_PROJECT_ID.iam.gserviceaccount.com"
 # # ... (adicione todos os outros campos do JSON da Service Account aqui)
 #
 # OBS: O bloco [gcp_service_account] DEVE conter exatamente os mesmos campos do seu arquivo JSON de credenciais.
@@ -37,9 +31,9 @@ import gspread # Biblioteca para interagir com a Google Sheets API
 def load_data_from_gsheets():
     """
     Carrega os dados da Google Sheet usando as credenciais da Service Account
-    armazenadas em st.secrets e retorna um DataFrame. Usa get_all_records()
-    para evitar a dependência de gspread_dataframe.
+    armazenadas em st.secrets e retorna um DataFrame.
     """
+    st.info("Carregando dados... Isso pode levar alguns segundos na primeira vez.")
     try:
         # 1. Obter as credenciais da Service Account e URL do st.secrets
         creds_dict = st.secrets["gcp_service_account"]
@@ -51,10 +45,10 @@ def load_data_from_gsheets():
 
         # 3. Abrir a planilha e selecionar a aba
         sh = gc.open_by_url(gsheets_url)
-        # O método .worksheet() retorna a aba pelo nome
+        # O método .worksheet() retorna a aba pelo nome. Aqui que ocorre o WorksheetNotFound.
         worksheet = sh.worksheet(worksheet_name)
 
-        # 4. LER OS DADOS E CONVERTER PARA DATAFRAME (Substituição de gspread_dataframe)
+        # 4. LER OS DADOS E CONVERTER PARA DATAFRAME
         # get_all_records() retorna uma lista de dicionários, usando a primeira linha como cabeçalho.
         data = worksheet.get_all_records() 
         df_sheet = pd.DataFrame.from_records(data)
@@ -63,32 +57,40 @@ def load_data_from_gsheets():
         # Limpeza e conversão de tipos (essencial após a leitura da planilha)
         df_sheet.dropna(how='all', inplace=True)
         
-        # Converte 'Data' para o formato de data
+        # Converte 'Data' para o formato de data (tentativa mais robusta)
         try:
+            # Tenta converter o objeto para data, inferindo o formato
             df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], errors='coerce')
-        except ValueError:
-            st.warning("Não foi possível converter a coluna 'Data' automaticamente. Verifique o formato na planilha.")
-            df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
-        
+        except Exception:
+             st.warning("Não foi possível converter a coluna 'Data'. Verifique o formato na planilha (deve ser YYYY-MM-DD ou similar).")
+             # Se falhar, tenta um formato padrão explícito
+             df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+            
         # Converte colunas numéricas, lidando com possíveis erros
         df_sheet['Total'] = pd.to_numeric(df_sheet['Total'], errors='coerce')
-        # Quantidade pode ser um inteiro que permite NaNs
+        # Quantidade pode ser um inteiro que permite NaNs (Int64)
         df_sheet['Quantity'] = pd.to_numeric(df_sheet['Quantity'], errors='coerce').astype('Int64')
 
-        # Remove linhas com 'Data' inválida após a conversão
+        # Remove linhas com valores NaT, NaN ou zero inesperado nas colunas chave
         df_sheet.dropna(subset=['Data', 'Total', 'Quantity'], inplace=True)
+        df_sheet = df_sheet[df_sheet['Total'] > 0]
         
         # Remove linhas onde a data é NaT (Not a Time)
         df_sheet.dropna(subset=['Data'], inplace=True)
-
-
+        
+        st.success("Dados carregados com sucesso!")
         return df_sheet
 
     except KeyError as e:
         # Erro específico se o st.secrets estiver faltando uma chave
         st.error(f"Erro de Configuração: A chave '{e}' está faltando no arquivo secrets.toml. Verifique suas credenciais e a URL/nome da planilha.")
         st.stop()
-    except gspread.exceptions.APIError as e:
+    except WorksheetNotFound:
+        # Erro específico para a aba não encontrada
+        worksheet_name = st.secrets.get("gsheets", {}).get("worksheet_name", "NOME_DESCONHECIDO")
+        st.error(f"Erro de Configuração: A aba/folha de trabalho '{worksheet_name}' não foi encontrada na planilha. Verifique se o nome em `secrets.toml` (`worksheet_name`) está EXATAMENTE igual ao nome da aba na sua planilha do Google Sheets (incluindo letras maiúsculas/minúsculas).")
+        st.stop()
+    except APIError as e:
         # Erro específico se a Service Account não tiver acesso
         st.error(f"Erro de Permissão do Google Sheets (APIError): Verifique se o e-mail da sua Service Account tem permissão de 'Leitor' na planilha.")
         st.stop()
@@ -109,24 +111,21 @@ def relatorio_por_dia_com_variacoes(dia, data_df):
     Gera o relatório diário e calcula variações em relação ao dia anterior.
     """
     # Converter o objeto date para Timestamp para comparação correta
-    dia_timestamp = pd.to_datetime(dia)
+    if isinstance(dia, (pd.Timestamp, pd.datetime)):
+        dia_date = dia.date()
+    else:
+        dia_date = dia
+
+    dia_timestamp = pd.to_datetime(dia_date)
     dia_anterior_timestamp = dia_timestamp - pd.Timedelta(days=1)
 
     # Filtragem de dados para o dia atual e o dia anterior
-    df_dia = data_df[data_df['Data'].dt.date == dia_timestamp.date()]
+    df_dia = data_df[data_df['Data'].dt.date == dia_date]
     df_dia_anterior = data_df[data_df['Data'].dt.date == dia_anterior_timestamp.date()]
 
     if df_dia.empty:
-        # st.warning(f"Não há dados para o dia {dia_timestamp.date()}.")
         return {}
 
-
-    # Cálculos de totais
-    total_por_cidade = df_dia.groupby('City')[['Total', 'Quantity']].sum()
-    total_por_tipo_cliente = df_dia.groupby('Customer type')[['Total', 'Quantity']].sum()
-    total_por_genero = df_dia.groupby('Gender')[['Total', 'Quantity']].sum()
-    total_por_linha_produto = df_dia.groupby('Product line')[['Total', 'Quantity']].sum()
-    total_por_payment = df_dia.groupby('Payment')[['Total', 'Quantity']].sum()
 
     # Função auxiliar para calcular totais e reindexar para a variação
     def calcular_totais_e_variacao(df_atual, df_anterior, coluna_agrupadora):
@@ -150,18 +149,24 @@ def relatorio_por_dia_com_variacoes(dia, data_df):
     
     # Tabelas cruzadas (Cross-tabs) e Variações
     
-    # Função auxiliar para calcular crosstab e variação
+    # FUNÇÃO CORRIGIDA: Usa groupby().value_counts().unstack() que é mais robusta
     def calcular_crosstab_e_variacao(df_atual, df_anterior, index_cols, col_cols):
-        atual = pd.crosstab(df_atual[index_cols], df_atual[col_cols])
-        anterior = pd.crosstab(df_anterior[index_cols], df_anterior[col_cols])
+        # Cria a tabela de contagem de forma robusta
+        atual = df_atual.groupby(index_cols)[col_cols].value_counts().unstack(fill_value=0)
+        anterior = df_anterior.groupby(index_cols)[col_cols].value_counts().unstack(fill_value=0)
         
-        # Alinha e subtrai
+        # Alinha os índices (linhas) e colunas
         idx = atual.index.union(anterior.index)
         cols = atual.columns.union(anterior.columns)
+        
         atual_reindex = atual.reindex(index=idx, columns=cols, fill_value=0)
         anterior_reindex = anterior.reindex(index=idx, columns=cols, fill_value=0)
-        return atual, atual_reindex - anterior_reindex
+        
+        variacao = atual_reindex - anterior_reindex
+        
+        return atual, variacao
 
+    # Usando Quantity (Count de Transações) para os crosstabs
     crosstab_cidade_tipo_cliente, variacao_cidade_tipo_cliente = calcular_crosstab_e_variacao(df_dia, df_dia_anterior, 'City', 'Customer type')
     crosstab_cidade_genero, variacao_cidade_genero = calcular_crosstab_e_variacao(df_dia, df_dia_anterior, ['City', 'Gender'], 'Customer type')
     crosstab_cidade_product, variacao_cidade_product = calcular_crosstab_e_variacao(df_dia, df_dia_anterior, 'City', 'Product line')
@@ -196,7 +201,6 @@ st.title("Relatório Diário de Vendas com Variações (Google Sheets)")
 
 # Verificação de dados
 if df.empty or 'Data' not in df.columns:
-    # A mensagem de erro da função load_data_from_gsheets já foi exibida se houve falha na conexão.
     st.info("O DataFrame está vazio ou a coluna 'Data' não foi encontrada. Verifique sua planilha e a aba configurada.")
     st.stop()
 
@@ -208,6 +212,7 @@ if not dias_unicos_ordenados:
     st.info("Não há datas válidas para seleção no seu conjunto de dados.")
     st.stop()
 
+# Garantir que a seleção do dia está correta para evitar erros no relatorio_por_dia_com_variacoes
 dia_selecionado = st.sidebar.selectbox("Selecione uma data", dias_unicos_ordenados)
 
 # Gerando o relatório para o dia selecionado
@@ -215,7 +220,7 @@ relatorio = relatorio_por_dia_com_variacoes(dia_selecionado, df)
 
 # Se o relatório retornar vazio (dia sem dados), paramos a execução aqui
 if not relatorio:
-    st.info(f"Não há dados para o dia {dia_selecionado}.")
+    st.info(f"Não há dados de vendas para o dia {dia_selecionado}.")
     st.stop()
 
 # Condições para os alertas
@@ -229,15 +234,21 @@ if not cidades_acima_30000.empty:
     alertas_positivos.append(f"As cidades **{cidades_str}** ultrapassaram R$30.000 em vendas totais.")
 
 # Condição 2: Cidades com queda de mais de 30% nas vendas totais (negativo)
-total_anterior_cidade = relatorio['total_por_cidade']['Total'] - relatorio['variacao_cidade']['Total']
-# Evitar divisão por zero e NaNs
-valid_indices = total_anterior_cidade[(total_anterior_cidade > 0) & (relatorio['variacao_cidade']['Total'].notna())].index
+total_atual_cidade = relatorio['total_por_cidade']['Total']
+variacao_cidade_abs = relatorio['variacao_cidade']['Total']
+total_anterior_cidade = total_atual_cidade - variacao_cidade_abs
+
+# Filtrar índices onde o total_anterior é válido e maior que zero
+valid_indices = total_anterior_cidade[total_anterior_cidade > 0].index
+
 if not valid_indices.empty:
-    variacao_percentual_cidade = (relatorio['variacao_cidade']['Total'].loc[valid_indices] / total_anterior_cidade.loc[valid_indices]) * 100
+    # Calcula a variação percentual APENAS para índices válidos
+    variacao_percentual_cidade = (variacao_cidade_abs.loc[valid_indices] / total_anterior_cidade.loc[valid_indices]) * 100
+    
     cidades_queda = variacao_percentual_cidade[variacao_percentual_cidade < -30]
     if not cidades_queda.empty:
         cidades_str = ", ".join(cidades_queda.index)
-        alertas_negativos.append(f"As cidades **{cidades_str}** tiveram uma queda superior a 30% nas vendas.")
+        alertas_negativos.append(f"As cidades **{cidades_str}** tiveram uma queda superior a 30% nas vendas em relação ao dia anterior.")
 
 
 # Condição 3: Método de pagamento "Pix" com aumento superior a 30% (positivo)
@@ -245,6 +256,7 @@ if "Pix" in relatorio['total_por_payment'].index:
     total_pix = relatorio['total_por_payment'].loc["Pix", "Total"]
     variacao_pix = relatorio['variacao_payment'].loc["Pix", "Total"]
     total_anterior_pix = total_pix - variacao_pix
+    
     if total_anterior_pix > 0:
         variacao_perc = (variacao_pix / total_anterior_pix) * 100
         if variacao_perc > 30:
@@ -268,7 +280,7 @@ else:
 
 
 # Exibir os alertas no expander
-with st.expander("Alertas Importantes", expanded=False, icon="🚨"):
+with st.expander("Alertas Importantes", expanded=True if total_alertas > 0 else False, icon="🚨"):
     for alerta in alertas_positivos:
         st.success(alerta)
     for alerta in alertas_negativos:
@@ -281,65 +293,82 @@ st.subheader(f"Relatório Detalhado de Vendas para o dia {dia_selecionado}")
 
 col1, col2 = st.columns(2) # Reduzido para 2 colunas para melhor layout
 
+# Estilo para DataFrames (opcional, mas melhora a visualização)
+def style_dataframe(df_input):
+    return df_input.style.format({
+        "Total": "R${:.2f}", 
+        "Var. Total": "R${:+.2f}", 
+        "Quantity": "{:.0f}",
+        "Var. Quantity": "{:+.0f}"
+    }, na_rep="-")
+
 with col1:
     # Exibição com variações
-    st.write("**Total de Vendas por Cidade e Variação:**")
-    st.dataframe(pd.concat([relatorio['total_por_cidade'].round(2), relatorio['variacao_cidade'].round(2).rename(
-        columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1))
+    st.markdown("##### Total de Vendas por Cidade e Variação:")
+    df_cidade_concat = pd.concat([relatorio['total_por_cidade'].round(2), relatorio['variacao_cidade'].round(2).rename(
+        columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
+    st.dataframe(style_dataframe(df_cidade_concat), use_container_width=True)
 
-    with st.expander("Gráfico de Total de Vendas por Cidade e Variação"):
+    with st.expander("Gráfico de Total de Vendas por Cidade"):
         df_plot_cidade = relatorio['total_por_cidade'].reset_index()
         fig = px.bar(df_plot_cidade, x='City', y='Total', title="Total de Vendas por Cidade")
         st.plotly_chart(fig, use_container_width=True)
 
 
-    st.write("**Total de vendas por Tipo de Cliente e Variação:**")
-    st.dataframe(pd.concat([relatorio['total_por_tipo_cliente'].round(2), relatorio['variacao_tipo_cliente'].round(2).rename(
-        columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1))
+    st.markdown("##### Total de vendas por Tipo de Cliente e Variação:")
+    df_cliente_concat = pd.concat([relatorio['total_por_tipo_cliente'].round(2), relatorio['variacao_tipo_cliente'].round(2).rename(
+        columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
+    st.dataframe(style_dataframe(df_cliente_concat), use_container_width=True)
 
-    with st.expander("Gráfico de Total de vendas por Tipo de Cliente e Variação:"):
+    with st.expander("Gráfico de Total de vendas por Tipo de Cliente"):
         df_plot_cliente = relatorio['total_por_tipo_cliente'].reset_index()
         fig = px.bar(df_plot_cliente, x='Customer type', y='Total', title="Total de Vendas por Tipo de Cliente")
         st.plotly_chart(fig, use_container_width=True)
 
-    st.write("**Total de vendas por Gênero e Variação:**")
-    st.dataframe(pd.concat([relatorio['total_por_genero'].round(2), relatorio['variacao_genero'].round(2).rename(
-        columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1))
+    st.markdown("##### Total de vendas por Gênero e Variação:")
+    df_genero_concat = pd.concat([relatorio['total_por_genero'].round(2), relatorio['variacao_genero'].round(2).rename(
+        columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
+    st.dataframe(style_dataframe(df_genero_concat), use_container_width=True)
 
-    with st.expander("Gráfico de Total de vendas por Gênero e Variação"):
+    with st.expander("Gráfico de Total de vendas por Gênero"):
         df_plot_genero = relatorio['total_por_genero'].reset_index()
         fig = px.bar(df_plot_genero, x='Gender', y='Total', title="Total de Vendas por Gênero")
         st.plotly_chart(fig, use_container_width=True)
 
-
-    st.write("**Total de vendas por Método de Pagamento e Variação:**")
-    st.dataframe(pd.concat([relatorio['total_por_payment'].round(2), relatorio['variacao_payment'].round(2).rename(
-        columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1))
-
-    with st.expander("Gráfico de vendas por Método de Pagamento e Variação"):
-        df_plot_payment = relatorio['total_por_payment'].reset_index()
-        fig = px.bar(df_plot_payment, x='Payment', y='Total', title="Total de Vendas por Método de Pagamento")
-        st.plotly_chart(fig, use_container_width=True)
-
 with col2:
-    st.write("**Total de vendas por Linha de Produto e Variação:**")
-    st.dataframe(pd.concat([relatorio['total_por_linha_produto'].round(2), relatorio['variacao_linha_produto'].round(2).rename(
-        columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1))
+    st.markdown("##### Total de vendas por Linha de Produto e Variação:")
+    df_produto_concat = pd.concat([relatorio['total_por_linha_produto'].round(2), relatorio['variacao_linha_produto'].round(2).rename(
+        columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
+    st.dataframe(style_dataframe(df_produto_concat), use_container_width=True)
 
-    with st.expander("Gráfico de vendas por Linha de Produto e Variação"):
+    with st.expander("Gráfico de vendas por Linha de Produto"):
         df_plot_produto = relatorio['total_por_linha_produto'].reset_index()
         fig = px.bar(df_plot_produto, x='Product line', y='Total', title="Total de Vendas por Linha de Produto")
         st.plotly_chart(fig, use_container_width=True)
 
 
-    st.write("**Distribuição de Clientes por Cidade e Tipo:**")
+    st.markdown("##### Total de vendas por Método de Pagamento e Variação:")
+    df_payment_concat = pd.concat([relatorio['total_por_payment'].round(2), relatorio['variacao_payment'].round(2).rename(
+        columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
+    st.dataframe(style_dataframe(df_payment_concat), use_container_width=True)
+
+    with st.expander("Gráfico de vendas por Método de Pagamento"):
+        df_plot_payment = relatorio['total_por_payment'].reset_index()
+        fig = px.bar(df_plot_payment, x='Payment', y='Total', title="Total de Vendas por Método de Pagamento")
+        st.plotly_chart(fig, use_container_width=True)
+
+    # ------------------ Cross-tabs ------------------
+    
+    st.markdown("##### Distribuição de Clientes por Cidade e Tipo:")
     st.dataframe(pd.concat(
         [relatorio["crosstab_cidade_tipo_cliente"], relatorio["variacao_cidade_tipo_cliente"].add_suffix(" (Var)")],
         axis=1
-    ))
+    ).fillna(0).astype(int), use_container_width=True)
+    
     with st.expander("Gráfico de Distribuição de Clientes por Cidade e Tipo"):
+        df_plot = relatorio["crosstab_cidade_tipo_cliente"].reset_index().melt(id_vars="City")
         fig = px.bar(
-            relatorio["crosstab_cidade_tipo_cliente"].reset_index().melt(id_vars="City"),
+            df_plot,
             x="City",
             y="value",
             color="Customer type",
@@ -349,13 +378,15 @@ with col2:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    st.write("**Distribuição de Clientes por Cidade, Gênero e Tipo:**")
+    
+    st.markdown("##### Distribuição de Clientes por Cidade, Gênero e Tipo:")
     st.dataframe(pd.concat(
         [relatorio["crosstab_cidade_genero"], relatorio["variacao_cidade_genero"].add_suffix(" (Var)")], axis=1
-    ))
+    ).fillna(0).astype(int), use_container_width=True)
 
     with st.expander("Gráfico de Distribuição de Clientes por Cidade, Gênero e Tipo"):
-        df_plot = relatorio['crosstab_cidade_genero'].stack().reset_index(name='count')
+        # O crosstab_cidade_genero tem um MultiIndex, é preciso empilhar para o Plotly
+        df_plot = relatorio['crosstab_cidade_genero'].stack(level=0).reset_index().rename(columns={0: 'count'})
         fig = px.bar(df_plot,
                       x='City',
                       y='count',
@@ -368,13 +399,13 @@ with col2:
         st.plotly_chart(fig, use_container_width=True)
 
 
-    st.write("**Distribuição de Clientes por Cidade, Gênero e Pagamento:**")
+    st.markdown("##### Distribuição de Clientes por Cidade, Pagamento e Gênero:")
     st.dataframe(pd.concat(
         [relatorio["crosstab_cidade_payment"], relatorio["variacao_cidade_payment"].add_suffix(" (Var)")], axis=1
-    ))
+    ).fillna(0).astype(int), use_container_width=True)
 
-    with st.expander("Distribuição de Clientes por Cidade, Gênero e Pagamento"):
-        df_plot = relatorio['crosstab_cidade_payment'].stack().reset_index(name='count')
+    with st.expander("Distribuição de Clientes por Cidade, Pagamento e Gênero"):
+        df_plot = relatorio['crosstab_cidade_payment'].stack(level=0).reset_index().rename(columns={0: 'count'})
         fig = px.bar(df_plot, x='City', y='count', color='Gender',
                       facet_col='Payment',
                       barmode='group',
