@@ -330,19 +330,19 @@ def style_dataframe(df_input):
     
     return df_styled
 
-# --- FUNÇÃO AUXILIAR PARA PLOTAGEM COM VARIAÇÃO ---
+# --- FUNÇÃO AUXILIAR PARA PLOTAGEM COM VARIAÇÃO (AGORA INCLUI QUANTIDADE) ---
 def plot_total_and_variation(df_total, df_var, id_col, title):
     """
-    Cria um DataFrame combinado e plota o Total e a Variação juntos.
+    Cria um DataFrame combinado e plota o Total, Quantidade e suas Variações.
     """
     # 1. Renomeia as colunas de variação e junta os DataFrames
     df_var_renamed = df_var.rename(
         columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})
     
-    df_concat = pd.concat([df_total, df_var_renamed], axis=1).reset_index()
+    df_concat = pd.concat([df_total.round(2), df_var_renamed.round(2)], axis=1).reset_index()
     
     # 2. Reformatar (melt) para que Total, Var. Total, Quantity, Var. Quantity sejam linhas
-    # Limitando-se às colunas de vendas (Total e Variação Total) para o gráfico
+    # Usando todas as colunas relevantes no melt
     df_plot = df_concat.melt(
         id_vars=id_col, 
         value_vars=['Total', 'Var. Total', 'Quantity', 'Var. Quantity'], 
@@ -350,28 +350,36 @@ def plot_total_and_variation(df_total, df_var, id_col, title):
         value_name='Valor'
     ).dropna(subset=['Valor'])
     
-    # Adicionar coluna para agrupar as barras lado a lado
-    df_plot['Tipo'] = df_plot['Métrica'].apply(lambda x: 'Total' if 'Total' in x else 'Quantidade')
+    # Adicionar coluna para agrupar as barras por tipo de métrica (Vendas vs. Quantidade)
+    df_plot['Tipo'] = df_plot['Métrica'].apply(lambda x: 'Vendas (R$)' if 'Total' in x else 'Quantidade')
+    df_plot['Medida'] = df_plot['Métrica'].apply(lambda x: 'Total' if 'Var.' not in x else 'Variação')
 
-    # Filtrar para plotar apenas as métricas de Vendas e Variação de Vendas no gráfico principal
-    df_vendas = df_plot[df_plot['Métrica'].isin(['Total', 'Var. Total'])]
-    
+
     # Cria o gráfico de barras interativo (Plotly Express)
+    # Usamos `Tipo` para faceting (separação em subplots) e `Medida` para agrupar as barras.
     fig = px.bar(
-        df_vendas, 
+        df_plot, 
         x=id_col, 
         y='Valor', 
-        color='Métrica', 
+        color='Medida', # Agrupamento principal (Total vs Variação)
         barmode='group', 
-        title=title,
+        facet_col='Tipo', # Subplots (Vendas vs Quantidade)
+        title=f"{title} - Total, Quantidade e Variação",
         template='plotly_white',
         color_discrete_map={
-            'Total': '#4C78A8',        # Azul padrão
-            'Var. Total': '#E45756'    # Vermelho para variação (bom para negativos)
+            'Total': '#4C78A8',        # Azul para totais
+            'Variação': '#E45756'      # Vermelho para variações
         }
     )
-    # Adiciona a linha zero para melhor visualização da variação
-    fig.add_hline(y=0, line_dash="dash", line_color="gray")
+    
+    # Configurações do layout
+    fig.update_layout(height=450, title_x=0.5)
+    
+    # Adiciona a linha zero para melhor visualização da variação (apenas no subplot de Quantidade/Vendas)
+    fig.for_each_xaxis(lambda axis: axis.update(title_text=''))
+    
+    # Adiciona linha zero nos dois subplots
+    fig.add_hline(y=0, line_dash="dash", line_color="gray", row="all", col="all")
     
     return fig
 
@@ -383,12 +391,12 @@ with col1:
         columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
     st.dataframe(style_dataframe(df_cidade_concat), use_container_width=True)
 
-    with st.expander("Gráfico de Total de Vendas e Variação por Cidade"):
+    with st.expander("Gráfico de Vendas e Quantidades por Cidade (Total e Variação)"):
         fig = plot_total_and_variation(
             relatorio['total_por_cidade'].round(2), 
             relatorio['variacao_cidade'].round(2), 
             'City', 
-            "Total de Vendas vs. Variação por Cidade"
+            "Métricas por Cidade"
         )
         st.plotly_chart(fig, use_container_width=True)
 
@@ -398,12 +406,12 @@ with col1:
         columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
     st.dataframe(style_dataframe(df_cliente_concat), use_container_width=True)
 
-    with st.expander("Gráfico de Total de vendas e Variação por Tipo de Cliente"):
+    with st.expander("Gráfico de Vendas e Quantidades por Tipo de Cliente (Total e Variação)"):
         fig = plot_total_and_variation(
             relatorio['total_por_tipo_cliente'].round(2), 
             relatorio['variacao_tipo_cliente'].round(2), 
             'Customer type', 
-            "Total de Vendas vs. Variação por Tipo de Cliente"
+            "Métricas por Tipo de Cliente"
         )
         st.plotly_chart(fig, use_container_width=True)
 
@@ -412,12 +420,12 @@ with col1:
         columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
     st.dataframe(style_dataframe(df_genero_concat), use_container_width=True)
 
-    with st.expander("Gráfico de Total de vendas e Variação por Gênero"):
+    with st.expander("Gráfico de Vendas e Quantidades por Gênero (Total e Variação)"):
         fig = plot_total_and_variation(
             relatorio['total_por_genero'].round(2), 
             relatorio['variacao_genero'].round(2), 
             'Gender', 
-            "Total de Vendas vs. Variação por Gênero"
+            "Métricas por Gênero"
         )
         st.plotly_chart(fig, use_container_width=True)
 
@@ -427,12 +435,12 @@ with col2:
         columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
     st.dataframe(style_dataframe(df_produto_concat), use_container_width=True)
 
-    with st.expander("Gráfico de Total de vendas e Variação por Linha de Produto"):
+    with st.expander("Gráfico de Vendas e Quantidades por Linha de Produto (Total e Variação)"):
         fig = plot_total_and_variation(
             relatorio['total_por_linha_produto'].round(2), 
             relatorio['variacao_linha_produto'].round(2), 
             'Product line', 
-            "Total de Vendas vs. Variação por Linha de Produto"
+            "Métricas por Linha de Produto"
         )
         st.plotly_chart(fig, use_container_width=True)
 
@@ -442,17 +450,19 @@ with col2:
         columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
     st.dataframe(style_dataframe(df_payment_concat), use_container_width=True)
 
-    with st.expander("Gráfico de Total de vendas e Variação por Método de Pagamento"):
+    with st.expander("Gráfico de Vendas e Quantidades por Método de Pagamento (Total e Variação)"):
         fig = plot_total_and_variation(
             relatorio['total_por_payment'].round(2), 
             relatorio['variacao_payment'].round(2), 
             'Payment', 
-            "Total de Vendas vs. Variação por Método de Pagamento"
+            "Métricas por Método de Pagamento"
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # ------------------ Cross-tabs ------------------
-    
+    # ------------------ Cross-tabs (Contagem de Clientes) ------------------
+    # Estes gráficos permanecem como contagem pura, pois a variação e o total já são mostrados
+    # na tabela cruzada.
+
     st.markdown("##### Distribuição de Clientes por Cidade e Tipo:")
     st.dataframe(pd.concat(
         [relatorio["crosstab_cidade_tipo_cliente"], relatorio["variacao_cidade_tipo_cliente"].add_suffix(" (Var)")],
