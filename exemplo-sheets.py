@@ -166,7 +166,36 @@ st.set_page_config(layout="wide", page_title="Dashboard de Vendas")
 
 # Carregando os dados da planilha
 df = load_data_from_gsheets()
+# BLOCO DE API: INTERCEPTA O n8n E DEVOLVE DATA + VARIAÇÃO
+# =================================================================
+if "request_type" in st.query_params:
+    request_type = st.query_params.get("request_type")
+    target_date = st.query_params.get("target_date")
+    report_name = st.query_params.get("report_name")
 
+    if request_type == "get_report" and target_date and report_name:
+        relatorio_api = relatorio_por_dia_com_variacoes(pd.to_datetime(target_date), df)
+        
+        # Mapeia as chaves para unir Dados + Variações em um único JSON
+        mapping = {
+            "total_por_cidade": ("total_por_cidade", "variacao_cidade"),
+            "total_por_tipo_cliente": ("total_por_tipo_cliente", "variacao_tipo_cliente"),
+            "total_por_genero": ("total_por_genero", "variacao_genero"),
+            "total_por_linha_produto": ("total_por_linha_produto", "variacao_linha_produto"),
+            "total_por_payment": ("total_por_payment", "variacao_payment")
+        }
+
+        if report_name in mapping:
+            key_data, key_var = mapping[report_name]
+            # Concatena Dados e Variações exatamente como exibido no app
+            df_final = pd.concat([
+                relatorio_api[key_data], 
+                relatorio_api[key_var].rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})
+            ], axis=1)
+            
+            st.json(df_final.reset_index().to_dict(orient="records"))
+            st.stop()
+# =================================================================
 
 # --- BARRA LATERAL (AÇÕES E SELEÇÃO) ---
 
