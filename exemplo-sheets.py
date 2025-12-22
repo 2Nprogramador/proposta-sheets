@@ -99,6 +99,45 @@ def load_data_from_gsheets():
         return pd.DataFrame()
 
 
+def processar_insights_criativos(df_dia):
+    """
+    Gera dataframes específicos para os novos insights baseados no dia selecionado.
+    """
+    if df_dia.empty:
+        return None
+
+    # 1. Tratamento de Hora (Extrair apenas a hora inteira)
+    # Tenta converter string '13:08' para datetime e pegar a hora 13
+    try:
+        df_dia['Hora_Int'] = pd.to_datetime(df_dia['Time'], format='%H:%M').dt.hour
+    except:
+        # Fallback se der erro
+        df_dia['Hora_Int'] = 0
+        
+    # --- INSIGHT 1: Vendas por Hora ---
+    vendas_por_hora = df_dia.groupby('Hora_Int')[['Total', 'Quantity']].sum().reset_index()
+    
+    # --- INSIGHT 2: Ticket Médio por Tipo de Cliente ---
+    # Ticket Médio = Soma Total / Contagem de Linhas (Transações)
+    ticket_medio_tipo = df_dia.groupby('Customer type').agg(
+        Faturamento=('Total', 'sum'),
+        Transacoes=('Invoice ID', 'count')
+    )
+    ticket_medio_tipo['Ticket_Medio'] = ticket_medio_tipo['Faturamento'] / ticket_medio_tipo['Transacoes']
+    ticket_medio_tipo = ticket_medio_tipo.reset_index()
+
+    # --- INSIGHT 3: Rating vs Faturamento (Por Linha de Produto) ---
+    rating_faturamento = df_dia.groupby('Product line').agg(
+        Rating_Medio=('Rating', 'mean'),
+        Faturamento=('Total', 'sum')
+    ).reset_index()
+
+    return {
+        "vendas_por_hora": vendas_por_hora,
+        "ticket_medio_tipo": ticket_medio_tipo,
+        "rating_faturamento": rating_faturamento
+    }
+
 
 def salvar_dados_gsheets(df_novos_dados):
 
@@ -973,3 +1012,65 @@ with col2:
         fig.update_layout(height=445)
 
         st.plotly_chart(fig, use_container_width=True)
+
+# ... (Seu código anterior dos gráficos) ...
+
+# --- SEÇÃO DE INSIGHTS AVANÇADOS (NOVA) ---
+st.markdown("---")
+st.subheader("🧠 Inteligência de Negócios & Insights Criativos")
+
+insights = processar_insights_criativos(relatorio['total_por_cidade'].copy()) # Usando df filtrado do dia, mas precisa do df original do dia
+
+# O ideal é passar o df bruto do dia filtrado para a função, vamos recuperar:
+df_dia_raw = df[df['Data'].dt.date == dia_selecionado]
+insights = processar_insights_criativos(df_dia_raw)
+
+if insights:
+    col_i1, col_i2, col_i3 = st.columns(3)
+
+    # 1. Gráfico de Pico de Vendas (Golden Hours)
+    with col_i1:
+        st.markdown("##### ⏰ Golden Hours (Vendas x Hora)")
+        fig_hora = px.area(
+            insights['vendas_por_hora'], 
+            x='Hora_Int', 
+            y='Total', 
+            markers=True,
+            title="Volume de Vendas ao longo do dia",
+            labels={'Hora_Int': 'Hora do Dia', 'Total': 'Faturamento (R$)'},
+            color_discrete_sequence=['#FF4B4B'] # Cor Streamlit
+        )
+        fig_hora.update_xaxes(tickmode='linear', dtick=1) # Mostrar todas as horas
+        st.plotly_chart(fig_hora, use_container_width=True)
+
+    # 2. Ticket Médio (Membro vs Normal)
+    with col_i2:
+        st.markdown("##### 💳 Ticket Médio: Membro vs Normal")
+        fig_ticket = px.bar(
+            insights['ticket_medio_tipo'], 
+            x='Customer type', 
+            y='Ticket_Medio',
+            color='Customer type',
+            text_auto='.2f',
+            title="Quem gasta mais por visita?",
+            labels={'Ticket_Medio': 'Ticket Médio (R$)'}
+        )
+        fig_ticket.update_traces(textposition='outside')
+        st.plotly_chart(fig_ticket, use_container_width=True)
+
+    # 3. Qualidade vs Faturamento (Bubble Chart)
+    with col_i3:
+        st.markdown("##### ⭐ Qualidade vs. Faturamento")
+        fig_qualidade = px.scatter(
+            insights['rating_faturamento'],
+            x='Faturamento',
+            y='Rating_Medio',
+            size='Faturamento', # Bolinha maior = mais dinheiro
+            color='Product line',
+            title="Produtos: Avaliação vs. Receita",
+            hover_name='Product line'
+        )
+        # Adiciona uma linha média de rating para referência
+        media_geral_rating = df_dia_raw['Rating'].mean()
+        fig_qualidade.add_hline(y=media_geral_rating, line_dash="dot", annotation_text="Média Geral")
+        st.plotly_chart(fig_qualidade, use_container_width=True)
