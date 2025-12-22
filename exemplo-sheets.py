@@ -841,7 +841,6 @@ insights = processar_insights_criativos(df_dia_raw)
 
 col1, col2 = st.columns(2)
 
-# Função de estilo existente (mantida para os dados padrões)
 def style_dataframe(df_input):
     is_first_day = (dia_selecionado == primeiro_dia_disponivel)
     format_dict = {"Total": "R${:.2f}", "Quantity": "{:.0f}"}
@@ -854,7 +853,6 @@ def style_dataframe(df_input):
     format_dict.update(var_format_dict)
     return df_input.style.format(format_dict, na_rep="-")
 
-# Função de plotagem existente
 def plot_total_and_variation(df_total, df_var, id_col, title):
     df_var_renamed = df_var.rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})
     df_concat = pd.concat([df_total.round(2), df_var_renamed.round(2)], axis=1).reset_index()
