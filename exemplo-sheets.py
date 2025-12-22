@@ -556,13 +556,33 @@ if "request_type" in st.query_params:
     report_name = st.query_params.get("report_name")
 
     if request_type == "get_report" and target_date and report_name:
+        
+        # 1. Prepara dados para os Relatórios Padrão
         relatorio_api = relatorio_por_dia_com_variacoes(pd.to_datetime(target_date), df)
         
-        if not relatorio_api:
+        # 2. Prepara dados para os Novos Insights (Necessita filtrar o DF bruto)
+        target_dt = pd.to_datetime(target_date).date()
+        df_api_raw = df[df['Data'].dt.date == target_dt]
+        insights_api = processar_insights_criativos(df_api_raw)
+
+        if not relatorio_api and not insights_api:
             st.json({"erro": "Nenhum dado encontrado para a data informada."})
             st.stop()
 
-        # MAPEAMENTO COMPLETO DAS 7 TABELAS
+        # --- NOVA LÓGICA: Verifica se o pedido é um dos NOVOS insights ---
+        novos_endpoints = ["vendas_por_hora", "ticket_medio_tipo", "rating_faturamento"]
+        
+        if report_name in novos_endpoints:
+            if insights_api and report_name in insights_api:
+                # Retorna o dataframe do insight direto como JSON
+                df_insight = insights_api[report_name]
+                st.json(df_insight.to_dict(orient="records"))
+                st.stop()
+            else:
+                st.json({"erro": f"Insight '{report_name}' não disponível para esta data."})
+                st.stop()
+
+        # --- LÓGICA ANTIGA: Relatórios Padrão (Mantida) ---
         mapping = {
             # Relatórios de Soma (Vendas e Quantidade)
             "total_por_cidade": ("total_por_cidade", "variacao_cidade", "sum"),
@@ -589,7 +609,7 @@ if "request_type" in st.query_params:
                     df_var.rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})
                 ], axis=1)
             else:
-                # Lógica para Distribuições (Crosstabs) - Adiciona sufixo (Var) nas colunas
+                # Lógica para Distribuições (Crosstabs)
                 df_final = pd.concat([
                     df_main, 
                     df_var.add_suffix(" (Var)")
