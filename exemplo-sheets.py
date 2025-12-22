@@ -836,8 +836,14 @@ with st.expander("Alertas Importantes", expanded=True if total_alertas > 0 else 
 st.subheader(f"Relatório Detalhado de Vendas para o dia {dia_selecionado}")
 
 # 1. CÁLCULO PRÉVIO DOS INSIGHTS (Para estarem disponíveis nas colunas)
-df_dia_raw = df[df['Data'].dt.date == dia_selecionado]
+data_filtro = dia_selecionado if isinstance(dia_selecionado, datetime.date) else dia_selecionado.date()
+
+# Cria um dataframe SOMENTE com as linhas daquele dia específico
+df_dia_raw = df[df['Data'].dt.date == data_filtro].copy()
+
+# Gera os insights apenas com esse recorte do dia
 insights = processar_insights_criativos(df_dia_raw)
+# ==============================================================================
 
 col1, col2 = st.columns(2)
 
