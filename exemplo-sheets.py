@@ -107,18 +107,15 @@ def processar_insights_criativos(df_dia):
         return None
 
     # 1. Tratamento de Hora (Extrair apenas a hora inteira)
-    # Tenta converter string '13:08' para datetime e pegar a hora 13
     try:
         df_dia['Hora_Int'] = pd.to_datetime(df_dia['Time'], format='%H:%M').dt.hour
     except:
-        # Fallback se der erro
         df_dia['Hora_Int'] = 0
         
     # --- INSIGHT 1: Vendas por Hora ---
     vendas_por_hora = df_dia.groupby('Hora_Int')[['Total', 'Quantity']].sum().reset_index()
     
     # --- INSIGHT 2: Ticket Médio por Tipo de Cliente ---
-    # Ticket Médio = Soma Total / Contagem de Linhas (Transações)
     ticket_medio_tipo = df_dia.groupby('Customer type').agg(
         Faturamento=('Total', 'sum'),
         Transacoes=('Invoice ID', 'count')
