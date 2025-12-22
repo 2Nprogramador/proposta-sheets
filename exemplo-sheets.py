@@ -821,258 +821,183 @@ with st.expander("Alertas Importantes", expanded=True if total_alertas > 0 else 
 
 # --- PLOTS ---
 
+# --- PLOTS E INSIGHTS ---
+
 st.subheader(f"Relatório Detalhado de Vendas para o dia {dia_selecionado}")
 
-col1, col2 = st.columns(2)
-
-
-
-def style_dataframe(df_input):
-
-    is_first_day = (dia_selecionado == primeiro_dia_disponivel)
-
-    format_dict = {"Total": "R${:.2f}", "Quantity": "{:.0f}"}
-
-    var_format_dict = {"Var. Total": "R${:+.2f}", "Var. Quantity": "{:+.0f}"}
-
-    if is_first_day:
-
-        var_format_dict = {
-
-            "Var. Total": lambda x: "N/A" if pd.isna(x) else ("R${:+.2f}".format(x) if pd.notna(x) else "-"),
-
-            "Var. Quantity": lambda x: "N/A" if pd.isna(x) else ("{:+.0f}".format(x) if pd.notna(x) else "-")
-
-        }
-
-    format_dict.update(var_format_dict)
-
-    return df_input.style.format(format_dict, na_rep="-")
-
-
-
-def plot_total_and_variation(df_total, df_var, id_col, title):
-
-    df_var_renamed = df_var.rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})
-
-    df_concat = pd.concat([df_total.round(2), df_var_renamed.round(2)], axis=1).reset_index()
-
-    
-
-    if 'index' in df_concat.columns:
-
-        df_concat.rename(columns={'index': id_col}, inplace=True)
-
-        
-
-    df_plot = df_concat.melt(
-
-        id_vars=id_col, 
-
-        value_vars=['Total', 'Var. Total', 'Quantity', 'Var. Quantity'], 
-
-        var_name='Métrica', 
-
-        value_name='Valor'
-
-    ).dropna(subset=['Valor'])
-
-    
-
-    color_map = {
-
-        'Total': 'rgb(76, 120, 168)', 'Quantity': 'rgb(30, 60, 100)',
-
-        'Var. Total': 'rgb(228, 87, 86)', 'Var. Quantity': 'rgb(190, 40, 40)'
-
-    }
-
-
-
-    fig = px.bar(
-
-        df_plot, x=id_col, y='Valor', color='Métrica', barmode='group', 
-
-        title=f"{title} - Total, Quantidade e Variação",
-
-        template='plotly_white', color_discrete_map=color_map,
-
-        labels={'Métrica': 'Variável'}
-
-    )
-
-    fig.update_layout(height=450, title_x=0.5)
-
-    fig.add_hline(y=0, line_dash="dash", line_color="gray")
-
-    return fig
-
-
-
-with col1:
-
-    st.markdown("##### Total de Vendas por Cidade e Variação:")
-
-    df_cidade_concat = pd.concat([relatorio['total_por_cidade'].round(2), relatorio['variacao_cidade'].round(2).rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
-
-    st.dataframe(style_dataframe(df_cidade_concat), use_container_width=True)
-
-    with st.expander("Gráfico de Vendas e Quantidades por Cidade"):
-
-        st.plotly_chart(plot_total_and_variation(relatorio['total_por_cidade'].round(2), relatorio['variacao_cidade'].round(2), 'City', "Métricas por Cidade"), use_container_width=True)
-
-
-
-    st.markdown("##### Total de vendas por Tipo de Cliente e Variação:")
-
-    df_cliente_concat = pd.concat([relatorio['total_por_tipo_cliente'].round(2), relatorio['variacao_tipo_cliente'].round(2).rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
-
-    st.dataframe(style_dataframe(df_cliente_concat), use_container_width=True)
-
-    with st.expander("Gráfico de Vendas e Quantidades por Tipo de Cliente"):
-
-        st.plotly_chart(plot_total_and_variation(relatorio['total_por_tipo_cliente'].round(2), relatorio['variacao_tipo_cliente'].round(2), 'Customer type', "Métricas por Tipo de Cliente"), use_container_width=True)
-
-
-
-    st.markdown("##### Total de vendas por Gênero e Variação:")
-
-    df_genero_concat = pd.concat([relatorio['total_por_genero'].round(2), relatorio['variacao_genero'].round(2).rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
-
-    st.dataframe(style_dataframe(df_genero_concat), use_container_width=True)
-
-    with st.expander("Gráfico de Vendas e Quantidades por Gênero"):
-
-        st.plotly_chart(plot_total_and_variation(relatorio['total_por_genero'].round(2), relatorio['variacao_genero'].round(2), 'Gender', "Métricas por Gênero"), use_container_width=True)
-
-
-
-with col2:
-
-    st.markdown("##### Total de vendas por Linha de Produto e Variação:")
-
-    df_produto_concat = pd.concat([relatorio['total_por_linha_produto'].round(2), relatorio['variacao_linha_produto'].round(2).rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
-
-    st.dataframe(style_dataframe(df_produto_concat), use_container_width=True)
-
-    with st.expander("Gráfico de Vendas e Quantidades por Linha de Produto"):
-
-        st.plotly_chart(plot_total_and_variation(relatorio['total_por_linha_produto'].round(2), relatorio['variacao_linha_produto'].round(2), 'Product line', "Métricas por Linha de Produto"), use_container_width=True)
-
-
-
-    st.markdown("##### Total de vendas por Método de Pagamento e Variação:")
-
-    df_payment_concat = pd.concat([relatorio['total_por_payment'].round(2), relatorio['variacao_payment'].round(2).rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
-
-    st.dataframe(style_dataframe(df_payment_concat), use_container_width=True)
-
-    with st.expander("Gráfico de Vendas e Quantidades por Método de Pagamento"):
-
-        st.plotly_chart(plot_total_and_variation(relatorio['total_por_payment'].round(2), relatorio['variacao_payment'].round(2), 'Payment', "Métricas por Método de Pagamento"), use_container_width=True)
-
-
-
-    st.markdown("##### Distribuição de Clientes por Cidade e Tipo:")
-
-    st.dataframe(pd.concat([relatorio["crosstab_cidade_tipo_cliente"], relatorio["variacao_cidade_tipo_cliente"].add_suffix(" (Var)")], axis=1).fillna(0).astype(int), use_container_width=True)
-
-    with st.expander("Gráfico de Distribuição de Clientes por Cidade e Tipo"):
-
-        df_plot = relatorio["crosstab_cidade_tipo_cliente"].reset_index().melt(id_vars="City")
-
-        st.plotly_chart(px.bar(df_plot, x="City", y="value", color="Customer type", barmode="group", title="Distribuição de Clientes por Cidade e Tipo", labels={'value': 'Número de Clientes'}), use_container_width=True)
-
-    
-
-    st.markdown("##### Distribuição de Clientes por Cidade, Gênero e Tipo:")
-
-    st.dataframe(pd.concat([relatorio["crosstab_cidade_genero"], relatorio["variacao_cidade_genero"].add_suffix(" (Var)")], axis=1).fillna(0).astype(int), use_container_width=True)
-
-    with st.expander("Gráfico de Distribuição de Clientes por Cidade, Gênero e Tipo"):
-
-        df_plot = relatorio['crosstab_cidade_genero'].stack(level=0).reset_index().rename(columns={0: 'count'})
-
-        st.plotly_chart(px.bar(df_plot, x='City', y='count', color='Customer type', facet_col='Gender', barmode='group', title='Distribuição de Clientes por Cidade, Gênero e Tipo', labels={'count': 'Número de Clientes'}), use_container_width=True)
-
-
-
-    st.markdown("##### Distribuição de Clientes por Cidade, Pagamento e Gênero:")
-
-    st.dataframe(pd.concat([relatorio["crosstab_cidade_payment"], relatorio["variacao_cidade_payment"].add_suffix(" (Var)")], axis=1).fillna(0).astype(int), use_container_width=True)
-
-    with st.expander("Distribuição de Clientes por Cidade, Pagamento e Gênero"):
-
-        df_plot = relatorio['crosstab_cidade_payment'].stack(level=0).reset_index().rename(columns={0: 'count'})
-
-        fig = px.bar(df_plot, x='City', y='count', color='Gender', facet_col='Payment', barmode='group', title='Distribuição de Clientes por Cidade, Gênero e Forma de Pagamento', labels={'count': 'Número de Clientes'}, template='plotly_dark')
-
-        fig.update_xaxes(tickangle=45)
-
-        fig.update_layout(height=445)
-
-        st.plotly_chart(fig, use_container_width=True)
-
-# ... (Seu código anterior dos gráficos) ...
-
-# --- SEÇÃO DE INSIGHTS AVANÇADOS (NOVA) ---
-st.markdown("---")
-st.subheader("🧠 Inteligência de Negócios & Insights Criativos")
-
-# --- CORREÇÃO AQUI ---
-# Apague a linha antiga que causava o erro e use apenas o df_dia_raw
-# A linha errada era: insights = processar_insights_criativos(relatorio['total_por_cidade'].copy())
-
-# O código correto deve ficar apenas assim:
+# 1. CÁLCULO PRÉVIO DOS INSIGHTS (Para estarem disponíveis nas colunas)
 df_dia_raw = df[df['Data'].dt.date == dia_selecionado]
 insights = processar_insights_criativos(df_dia_raw)
 
-if insights:
-    col_i1, col_i2, col_i3 = st.columns(3)
+col1, col2 = st.columns(2)
 
-    # 1. Gráfico de Pico de Vendas (Golden Hours)
-    with col_i1:
+# Função de estilo existente (mantida para os dados padrões)
+def style_dataframe(df_input):
+    is_first_day = (dia_selecionado == primeiro_dia_disponivel)
+    format_dict = {"Total": "R${:.2f}", "Quantity": "{:.0f}"}
+    var_format_dict = {"Var. Total": "R${:+.2f}", "Var. Quantity": "{:+.0f}"}
+    if is_first_day:
+        var_format_dict = {
+            "Var. Total": lambda x: "N/A" if pd.isna(x) else ("R${:+.2f}".format(x) if pd.notna(x) else "-"),
+            "Var. Quantity": lambda x: "N/A" if pd.isna(x) else ("{:+.0f}".format(x) if pd.notna(x) else "-")
+        }
+    format_dict.update(var_format_dict)
+    return df_input.style.format(format_dict, na_rep="-")
+
+# Função de plotagem existente
+def plot_total_and_variation(df_total, df_var, id_col, title):
+    df_var_renamed = df_var.rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})
+    df_concat = pd.concat([df_total.round(2), df_var_renamed.round(2)], axis=1).reset_index()
+    
+    if 'index' in df_concat.columns:
+        df_concat.rename(columns={'index': id_col}, inplace=True)
+        
+    df_plot = df_concat.melt(
+        id_vars=id_col, 
+        value_vars=['Total', 'Var. Total', 'Quantity', 'Var. Quantity'], 
+        var_name='Métrica', 
+        value_name='Valor'
+    ).dropna(subset=['Valor'])
+    
+    color_map = {
+        'Total': 'rgb(76, 120, 168)', 'Quantity': 'rgb(30, 60, 100)',
+        'Var. Total': 'rgb(228, 87, 86)', 'Var. Quantity': 'rgb(190, 40, 40)'
+    }
+
+    fig = px.bar(
+        df_plot, x=id_col, y='Valor', color='Métrica', barmode='group', 
+        title=f"{title} - Total, Quantidade e Variação",
+        template='plotly_white', color_discrete_map=color_map,
+        labels={'Métrica': 'Variável'}
+    )
+    fig.update_layout(height=450, title_x=0.5)
+    fig.add_hline(y=0, line_dash="dash", line_color="gray")
+    return fig
+
+# --- COLUNA 1 ---
+with col1:
+    # 1. Cidade
+    st.markdown("##### Total de Vendas por Cidade e Variação:")
+    df_cidade_concat = pd.concat([relatorio['total_por_cidade'].round(2), relatorio['variacao_cidade'].round(2).rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
+    st.dataframe(style_dataframe(df_cidade_concat), use_container_width=True)
+    with st.expander("Gráfico de Vendas e Quantidades por Cidade"):
+        st.plotly_chart(plot_total_and_variation(relatorio['total_por_cidade'].round(2), relatorio['variacao_cidade'].round(2), 'City', "Métricas por Cidade"), use_container_width=True)
+
+    # 2. Tipo de Cliente
+    st.markdown("##### Total de vendas por Tipo de Cliente e Variação:")
+    df_cliente_concat = pd.concat([relatorio['total_por_tipo_cliente'].round(2), relatorio['variacao_tipo_cliente'].round(2).rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
+    st.dataframe(style_dataframe(df_cliente_concat), use_container_width=True)
+    with st.expander("Gráfico de Vendas e Quantidades por Tipo de Cliente"):
+        st.plotly_chart(plot_total_and_variation(relatorio['total_por_tipo_cliente'].round(2), relatorio['variacao_tipo_cliente'].round(2), 'Customer type', "Métricas por Tipo de Cliente"), use_container_width=True)
+
+    # 3. Gênero
+    st.markdown("##### Total de vendas por Gênero e Variação:")
+    df_genero_concat = pd.concat([relatorio['total_por_genero'].round(2), relatorio['variacao_genero'].round(2).rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
+    st.dataframe(style_dataframe(df_genero_concat), use_container_width=True)
+    with st.expander("Gráfico de Vendas e Quantidades por Gênero"):
+        st.plotly_chart(plot_total_and_variation(relatorio['total_por_genero'].round(2), relatorio['variacao_genero'].round(2), 'Gender', "Métricas por Gênero"), use_container_width=True)
+
+    # 4. Crosstab (Cidade x Gênero x Tipo)
+    st.markdown("##### Distribuição de Clientes por Cidade, Gênero e Tipo:")
+    st.dataframe(pd.concat([relatorio["crosstab_cidade_genero"], relatorio["variacao_cidade_genero"].add_suffix(" (Var)")], axis=1).fillna(0).astype(int), use_container_width=True)
+    with st.expander("Gráfico de Distribuição de Clientes por Cidade, Gênero e Tipo"):
+        df_plot = relatorio['crosstab_cidade_genero'].stack(level=0).reset_index().rename(columns={0: 'count'})
+        st.plotly_chart(px.bar(df_plot, x='City', y='count', color='Customer type', facet_col='Gender', barmode='group', title='Distribuição de Clientes por Cidade, Gênero e Tipo', labels={'count': 'Número de Clientes'}), use_container_width=True)
+
+    # === NOVO INSIGHT 1: Golden Hours (Adicionado na Coluna 1) ===
+    if insights:
+        st.markdown("---")
         st.markdown("##### ⏰ Golden Hours (Vendas x Hora)")
-        fig_hora = px.area(
-            insights['vendas_por_hora'], 
-            x='Hora_Int', 
-            y='Total', 
-            markers=True,
-            title="Volume de Vendas ao longo do dia",
-            labels={'Hora_Int': 'Hora do Dia', 'Total': 'Faturamento (R$)'},
-            color_discrete_sequence=['#FF4B4B'] # Cor Streamlit
-        )
-        fig_hora.update_xaxes(tickmode='linear', dtick=1) # Mostrar todas as horas
-        st.plotly_chart(fig_hora, use_container_width=True)
+        # Tabela Formatada
+        df_gh = insights['vendas_por_hora'].set_index('Hora_Int')
+        st.dataframe(df_gh.style.format({"Total": "R${:.2f}", "Quantity": "{:.0f}"}), use_container_width=True)
+        # Expander com Gráfico
+        with st.expander("Ver Gráfico de Horários"):
+            fig_hora = px.area(
+                insights['vendas_por_hora'], 
+                x='Hora_Int', 
+                y='Total', 
+                markers=True,
+                title="Volume de Vendas ao longo do dia",
+                labels={'Hora_Int': 'Hora do Dia', 'Total': 'Faturamento (R$)'},
+                color_discrete_sequence=['#FF4B4B']
+            )
+            fig_hora.update_xaxes(tickmode='linear', dtick=1)
+            st.plotly_chart(fig_hora, use_container_width=True)
 
-    # 2. Ticket Médio (Membro vs Normal)
-    with col_i2:
+# --- COLUNA 2 ---
+with col2:
+    # 1. Produto
+    st.markdown("##### Total de vendas por Linha de Produto e Variação:")
+    df_produto_concat = pd.concat([relatorio['total_por_linha_produto'].round(2), relatorio['variacao_linha_produto'].round(2).rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
+    st.dataframe(style_dataframe(df_produto_concat), use_container_width=True)
+    with st.expander("Gráfico de Vendas e Quantidades por Linha de Produto"):
+        st.plotly_chart(plot_total_and_variation(relatorio['total_por_linha_produto'].round(2), relatorio['variacao_linha_produto'].round(2), 'Product line', "Métricas por Linha de Produto"), use_container_width=True)
+
+    # 2. Pagamento
+    st.markdown("##### Total de vendas por Método de Pagamento e Variação:")
+    df_payment_concat = pd.concat([relatorio['total_por_payment'].round(2), relatorio['variacao_payment'].round(2).rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
+    st.dataframe(style_dataframe(df_payment_concat), use_container_width=True)
+    with st.expander("Gráfico de Vendas e Quantidades por Método de Pagamento"):
+        st.plotly_chart(plot_total_and_variation(relatorio['total_por_payment'].round(2), relatorio['variacao_payment'].round(2), 'Payment', "Métricas por Método de Pagamento"), use_container_width=True)
+
+    # 3. Crosstab (Cidade x Tipo)
+    st.markdown("##### Distribuição de Clientes por Cidade e Tipo:")
+    st.dataframe(pd.concat([relatorio["crosstab_cidade_tipo_cliente"], relatorio["variacao_cidade_tipo_cliente"].add_suffix(" (Var)")], axis=1).fillna(0).astype(int), use_container_width=True)
+    with st.expander("Gráfico de Distribuição de Clientes por Cidade e Tipo"):
+        df_plot = relatorio["crosstab_cidade_tipo_cliente"].reset_index().melt(id_vars="City")
+        st.plotly_chart(px.bar(df_plot, x="City", y="value", color="Customer type", barmode="group", title="Distribuição de Clientes por Cidade e Tipo", labels={'value': 'Número de Clientes'}), use_container_width=True)
+    
+    # 4. Crosstab (Pagamento x Gênero)
+    st.markdown("##### Distribuição de Clientes por Cidade, Pagamento e Gênero:")
+    st.dataframe(pd.concat([relatorio["crosstab_cidade_payment"], relatorio["variacao_cidade_payment"].add_suffix(" (Var)")], axis=1).fillna(0).astype(int), use_container_width=True)
+    with st.expander("Distribuição de Clientes por Cidade, Pagamento e Gênero"):
+        df_plot = relatorio['crosstab_cidade_payment'].stack(level=0).reset_index().rename(columns={0: 'count'})
+        fig = px.bar(df_plot, x='City', y='count', color='Gender', facet_col='Payment', barmode='group', title='Distribuição de Clientes por Cidade, Gênero e Forma de Pagamento', labels={'count': 'Número de Clientes'}, template='plotly_dark')
+        fig.update_xaxes(tickangle=45)
+        fig.update_layout(height=445)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # === NOVO INSIGHT 2: Ticket Médio (Adicionado na Coluna 2) ===
+    if insights:
+        st.markdown("---")
         st.markdown("##### 💳 Ticket Médio: Membro vs Normal")
-        fig_ticket = px.bar(
-            insights['ticket_medio_tipo'], 
-            x='Customer type', 
-            y='Ticket_Medio',
-            color='Customer type',
-            text_auto='.2f',
-            title="Quem gasta mais por visita?",
-            labels={'Ticket_Medio': 'Ticket Médio (R$)'}
-        )
-        fig_ticket.update_traces(textposition='outside')
-        st.plotly_chart(fig_ticket, use_container_width=True)
+        # Tabela Formatada
+        df_ticket = insights['ticket_medio_tipo'].set_index('Customer type')
+        st.dataframe(df_ticket.style.format({'Faturamento': 'R${:.2f}', 'Ticket_Medio': 'R${:.2f}'}), use_container_width=True)
+        # Expander com Gráfico
+        with st.expander("Ver Gráfico de Ticket Médio"):
+            fig_ticket = px.bar(
+                insights['ticket_medio_tipo'], 
+                x='Customer type', 
+                y='Ticket_Medio',
+                color='Customer type',
+                text_auto='.2f',
+                title="Quem gasta mais por visita?",
+                labels={'Ticket_Medio': 'Ticket Médio (R$)'}
+            )
+            fig_ticket.update_traces(textposition='outside')
+            st.plotly_chart(fig_ticket, use_container_width=True)
 
-    # 3. Qualidade vs Faturamento (Bubble Chart)
-    with col_i3:
-        st.markdown("##### ⭐ Qualidade vs. Faturamento")
-        fig_qualidade = px.scatter(
-            insights['rating_faturamento'],
-            x='Faturamento',
-            y='Rating_Medio',
-            size='Faturamento', # Bolinha maior = mais dinheiro
-            color='Product line',
-            title="Produtos: Avaliação vs. Receita",
-            hover_name='Product line'
-        )
-        # Adiciona uma linha média de rating para referência
-        media_geral_rating = df_dia_raw['Rating'].mean()
-        fig_qualidade.add_hline(y=media_geral_rating, line_dash="dot", annotation_text="Média Geral")
-        st.plotly_chart(fig_qualidade, use_container_width=True)
+# === NOVO INSIGHT 3: Qualidade vs Faturamento (Adicionado ao final da Coluna 1 ou 2, escolhi 1 para balancear) ===
+with col1:
+    if insights:
+        st.markdown("---")
+        st.markdown("##### ⭐ Qualidade vs. Faturamento (Matriz)")
+        # Tabela Formatada
+        df_rating = insights['rating_faturamento'].set_index('Product line')
+        st.dataframe(df_rating.style.format({'Rating_Medio': '{:.2f}', 'Faturamento': 'R${:.2f}'}), use_container_width=True)
+        # Expander com Gráfico
+        with st.expander("Ver Matriz de Qualidade"):
+            fig_qualidade = px.scatter(
+                insights['rating_faturamento'],
+                x='Faturamento',
+                y='Rating_Medio',
+                size='Faturamento', 
+                color='Product line',
+                title="Produtos: Avaliação vs. Receita",
+                hover_name='Product line'
+            )
+            media_geral_rating = df_dia_raw['Rating'].mean()
+            fig_qualidade.add_hline(y=media_geral_rating, line_dash="dot", annotation_text="Média Geral")
+            st.plotly_chart(fig_qualidade, use_container_width=True)
