@@ -1019,9 +1019,11 @@ with col2:
 st.markdown("---")
 st.subheader("🧠 Inteligência de Negócios & Insights Criativos")
 
-insights = processar_insights_criativos(relatorio['total_por_cidade'].copy()) # Usando df filtrado do dia, mas precisa do df original do dia
+# --- CORREÇÃO AQUI ---
+# Apague a linha antiga que causava o erro e use apenas o df_dia_raw
+# A linha errada era: insights = processar_insights_criativos(relatorio['total_por_cidade'].copy())
 
-# O ideal é passar o df bruto do dia filtrado para a função, vamos recuperar:
+# O código correto deve ficar apenas assim:
 df_dia_raw = df[df['Data'].dt.date == dia_selecionado]
 insights = processar_insights_criativos(df_dia_raw)
 
