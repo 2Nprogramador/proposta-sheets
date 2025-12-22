@@ -557,9 +557,9 @@ if "request_type" in st.query_params:
         # 1. Prepara dados para os Relatórios Padrão
         relatorio_api = relatorio_por_dia_com_variacoes(pd.to_datetime(target_date), df)
         
-        # 2. Prepara dados para os Novos Insights (Necessita filtrar o DF bruto)
+        # 2. Prepara dados para os Novos Insights (Necessita filtrar o DF bruto para O DIA APENAS)
         target_dt = pd.to_datetime(target_date).date()
-        df_api_raw = df[df['Data'].dt.date == target_dt]
+        df_api_raw = df[df['Data'].dt.date == target_dt] # AQUI GARANTE QUE É SÓ O DIA
         insights_api = processar_insights_criativos(df_api_raw)
 
         if not relatorio_api and not insights_api:
@@ -571,7 +571,6 @@ if "request_type" in st.query_params:
         
         if report_name in novos_endpoints:
             if insights_api and report_name in insights_api:
-                # Retorna o dataframe do insight direto como JSON
                 df_insight = insights_api[report_name]
                 st.json(df_insight.to_dict(orient="records"))
                 st.stop()
@@ -579,34 +578,28 @@ if "request_type" in st.query_params:
                 st.json({"erro": f"Insight '{report_name}' não disponível para esta data."})
                 st.stop()
 
-        # --- LÓGICA ANTIGA: Relatórios Padrão (Mantida) ---
+        # --- LÓGICA ANTIGA: Relatórios Padrão ---
         mapping = {
-            # Relatórios de Soma (Vendas e Quantidade)
             "total_por_cidade": ("total_por_cidade", "variacao_cidade", "sum"),
             "total_por_linha_produto": ("total_por_linha_produto", "variacao_linha_produto", "sum"),
             "total_por_tipo_cliente": ("total_por_tipo_cliente", "variacao_tipo_cliente", "sum"),
             "total_por_payment": ("total_por_payment", "variacao_payment", "sum"),
             "total_por_genero": ("total_por_genero", "variacao_genero", "sum"),
-            
-            # Relatórios de Distribuição (Crosstabs)
             "distribuicao_cidade_tipo": ("crosstab_cidade_tipo_cliente", "variacao_cidade_tipo_cliente", "cross"),
             "distribuicao_cidade_genero_tipo": ("crosstab_cidade_genero", "variacao_cidade_genero", "cross")
         }
 
         if report_name in mapping:
             key_data, key_var, report_type = mapping[report_name]
-            
             df_main = relatorio_api[key_data]
             df_var = relatorio_api[key_var]
 
             if report_type == "sum":
-                # Lógica para Total e Quantidade
                 df_final = pd.concat([
                     df_main, 
                     df_var.rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})
                 ], axis=1)
             else:
-                # Lógica para Distribuições (Crosstabs)
                 df_final = pd.concat([
                     df_main, 
                     df_var.add_suffix(" (Var)")
