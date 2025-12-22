@@ -683,7 +683,7 @@ st.sidebar.markdown("---")
 
 
 
-st.title("Relatório Diário de Vendas com Variações (Google Sheets)")
+st.title("Relatório Diário de Vendas Completo com Variações")
 
 
 
