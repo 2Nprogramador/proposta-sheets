@@ -994,17 +994,12 @@ with col1:
     if insights:
         st.markdown("---")
         st.markdown("##### ⭐ Qualidade vs. Faturamento (Matriz)")
-        # Tabela Formatada
         df_rating = insights['rating_faturamento'].set_index('Product line')
         st.dataframe(df_rating.style.format({'Rating_Medio': '{:.2f}', 'Faturamento': 'R${:.2f}'}), use_container_width=True)
-        # Expander com Gráfico
         with st.expander("Ver Matriz de Qualidade"):
             fig_qualidade = px.scatter(
-                insights['rating_faturamento'],
-                x='Faturamento',
-                y='Rating_Medio',
-                size='Faturamento', 
-                color='Product line',
+                insights['rating_faturamento'], x='Faturamento', y='Rating_Medio',
+                size='Faturamento', color='Product line',
                 title="Produtos: Avaliação vs. Receita",
                 hover_name='Product line'
             )
