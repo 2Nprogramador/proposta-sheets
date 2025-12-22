@@ -838,12 +838,19 @@ st.subheader(f"Relatório Detalhado de Vendas para o dia {dia_selecionado}")
 # 1. CÁLCULO PRÉVIO DOS INSIGHTS (Baseado APENAS no dia selecionado)
 # ==============================================================================
 # Alteração aqui: Garante que 'dia_selecionado' seja comparável com a coluna Data
-data_filtro = dia_selecionado if isinstance(dia_selecionado, datetime.date) else dia_selecionado.date()
+if isinstance(dia_selecionado, datetime.datetime):
+    data_filtro = dia_selecionado.date()
+elif isinstance(dia_selecionado, (np.datetime64, pd.Timestamp)):
+    data_filtro = dia_selecionado.date()
+else:
+    data_filtro = dia_selecionado
 
-# Cria um dataframe SOMENTE com as linhas daquele dia específico
+# Cria um dataframe auxiliar contendo APENAS as linhas onde a data bate com o filtro
+# Importante: Convertemos a coluna 'Data' do DF para .dt.date antes de comparar
 df_dia_raw = df[df['Data'].dt.date == data_filtro].copy()
 
-# Gera os insights apenas com esse recorte do dia
+# Gera os insights (agrupamentos e somas) baseados APENAS nessa fatia de dados
+# Se o df_dia_raw tiver apenas 50 linhas do dia, o faturamento será a soma dessas 50 linhas (ex: 17k)
 insights = processar_insights_criativos(df_dia_raw)
 # ==============================================================================
 
