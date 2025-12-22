@@ -845,12 +845,21 @@ if isinstance(dia_selecionado, (pd.Timestamp, datetime.datetime, np.datetime64))
 else:
     data_filtro = dia_selecionado
 
-# Cria um dataframe auxiliar contendo APENAS as linhas onde a data bate com o filtro
-# Importante: Convertemos a coluna 'Data' do DF para .dt.date antes de comparar
+# 2. CRIA O DATAFRAME BLINDADO
+# Aqui comparamos apenas a PARTE DA DATA (dt.date) da coluna 'Data' com o seu filtro.
+# O .copy() garante que mexer nisso não afeta o resto.
 df_dia_raw = df[df['Data'].dt.date == data_filtro].copy()
 
-# Gera os insights (agrupamentos e somas) baseados APENAS nessa fatia de dados
-# Se o df_dia_raw tiver apenas 50 linhas do dia, o faturamento será a soma dessas 50 linhas (ex: 17k)
+# 3. VERIFICAÇÃO DE SEGURANÇA (Opcional - Debug)
+# Se por acaso o filtro falhar, paramos tudo.
+if not df_dia_raw.empty:
+    datas_encontradas = df_dia_raw['Data'].dt.date.unique()
+    if len(datas_encontradas) > 1 or datas_encontradas[0] != data_filtro:
+        st.error(f"ERRO CRÍTICO: O filtro de data falhou. Foram encontrados dados de: {datas_encontradas}")
+        st.stop()
+
+# 4. GERA OS INSIGHTS USANDO APENAS O DF DO DIA
+# A função 'processar_insights_criativos' recebe 'df_dia_raw', que contém SÓ o dia escolhido.
 insights = processar_insights_criativos(df_dia_raw)
 
 # ==============================================================================
