@@ -198,7 +198,7 @@ def gerar_dados_proximo_dia(df_atual):
 
         'Saude e Beleza', 'Acessorios Eletronicos', 'Casa e Estilo de Vida',
 
-        'Esportes e Viagens', 'Moda'
+        'Esportes e Viagens', 'Moda', 'Alimentos e Bebidas'
 
     ]
 
