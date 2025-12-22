@@ -1008,8 +1008,25 @@ with col1:
     if insights:
         st.markdown("---")
         st.markdown("##### ⭐ Qualidade vs. Faturamento (Matriz)")
-        df_rating = insights['rating_faturamento'].set_index('Product line')
-        st.dataframe(df_rating.style.format({'Rating_Medio': '{:.2f}', 'Faturamento': 'R${:.2f}'}), use_container_width=True)
+        
+        # 1. Copia o dataframe
+        df_rating = insights['rating_faturamento'].copy()
+        
+        # 2. Define o índice como 'Product line'
+        df_rating = df_rating.set_index('Product line')
+        
+        # 3. Força a exibição APENAS das colunas desejadas (remove qualquer outra sujeira)
+        df_rating = df_rating[['Rating_Medio', 'Faturamento']]
+        
+        # 4. Exibe
+        st.dataframe(
+            df_rating.style.format({
+                'Rating_Medio': '{:.2f}', 
+                'Faturamento': 'R${:.2f}'
+            }), 
+            use_container_width=True
+        )
+        
         with st.expander("Ver Matriz de Qualidade"):
             fig_qualidade = px.scatter(
                 insights['rating_faturamento'], x='Faturamento', y='Rating_Medio',
