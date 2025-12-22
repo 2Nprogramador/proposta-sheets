@@ -959,6 +959,22 @@ with col1:
 
         st.plotly_chart(fig, use_container_width=True)
 
+      st.markdown("##### Distribuição de Clientes por Cidade, Gênero e Tipo:")
+
+    st.dataframe(pd.concat([relatorio["crosstab_cidade_genero"], relatorio["variacao_cidade_genero"].add_suffix(" (Var)")], axis=1).fillna(0).astype(int), use_container_width=True)
+
+    with st.expander("Gráfico de Distribuição de Clientes por Cidade, Gênero e Tipo"):
+
+        df_plot = relatorio['crosstab_cidade_genero'].stack(level=0).reset_index().rename(columns={0: 'count'})
+
+        st.plotly_chart(px.bar(df_plot, x='City', y='count', color='Customer type', facet_col='Gender', barmode='group', title='Distribuição de Clientes por Cidade, Gênero e Tipo', labels={'count': 'Número de Clientes'}), use_container_width=True)
+
+
+
+    st.markdown("##### Distribuição de Clientes por Cidade, Pagamento e Gênero:")
+
+    st.dataframe(pd.concat([relatorio["crosstab_cidade_payment"], relatorio["variacao_cidade_payment"].add_suffix(" (Var)")], axis=1).fillna(0).astype(int), use_container_width=True)
+
 with col2:
 
     st.markdown("##### Total de vendas por Linha de Produto e Variação:")
@@ -997,21 +1013,7 @@ with col2:
 
     
 
-    st.markdown("##### Distribuição de Clientes por Cidade, Gênero e Tipo:")
-
-    st.dataframe(pd.concat([relatorio["crosstab_cidade_genero"], relatorio["variacao_cidade_genero"].add_suffix(" (Var)")], axis=1).fillna(0).astype(int), use_container_width=True)
-
-    with st.expander("Gráfico de Distribuição de Clientes por Cidade, Gênero e Tipo"):
-
-        df_plot = relatorio['crosstab_cidade_genero'].stack(level=0).reset_index().rename(columns={0: 'count'})
-
-        st.plotly_chart(px.bar(df_plot, x='City', y='count', color='Customer type', facet_col='Gender', barmode='group', title='Distribuição de Clientes por Cidade, Gênero e Tipo', labels={'count': 'Número de Clientes'}), use_container_width=True)
-
-
-
-    st.markdown("##### Distribuição de Clientes por Cidade, Pagamento e Gênero:")
-
-    st.dataframe(pd.concat([relatorio["crosstab_cidade_payment"], relatorio["variacao_cidade_payment"].add_suffix(" (Var)")], axis=1).fillna(0).astype(int), use_container_width=True)
+  
 
     with st.expander("Distribuição de Clientes por Cidade, Pagamento e Gênero"):
 
