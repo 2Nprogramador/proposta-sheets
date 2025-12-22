@@ -835,7 +835,9 @@ with st.expander("Alertas Importantes", expanded=True if total_alertas > 0 else 
 
 st.subheader(f"Relatório Detalhado de Vendas para o dia {dia_selecionado}")
 
-# 1. CÁLCULO PRÉVIO DOS INSIGHTS (Para estarem disponíveis nas colunas)
+# 1. CÁLCULO PRÉVIO DOS INSIGHTS (Baseado APENAS no dia selecionado)
+# ==============================================================================
+# Alteração aqui: Garante que 'dia_selecionado' seja comparável com a coluna Data
 data_filtro = dia_selecionado if isinstance(dia_selecionado, datetime.date) else dia_selecionado.date()
 
 # Cria um dataframe SOMENTE com as linhas daquele dia específico
