@@ -683,7 +683,7 @@ st.sidebar.markdown("---")
 
 
 
-st.title("Relatório Diário de Vendas Completo com Variações")
+st.title("Relatório Diário de Vendas Completo com Alertas no Whatsapp")
 
 
 
