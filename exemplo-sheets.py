@@ -24,23 +24,6 @@ import random
 
 @st.cache_data(ttl=600)
 
-Com a garantia de que a planilha agora está padronizada (ponto para milhar, vírgula para centavos), o código Python fica muito mais simples e seguro.
-
-Não precisamos mais tentar "adivinhar" o formato ou fazer verificações complexas. Podemos usar uma função direta de conversão BR -> float.
-
-Aqui está o código completo, refeito e otimizado para essa nova realidade:
-
-Python
-
-import pandas as pd
-import streamlit as st
-import plotly.express as px
-import plotly
-import gspread
-from gspread.exceptions import WorksheetNotFound, APIError
-import datetime
-import numpy as np
-import random
 
 # --- FUNÇÕES DE INTERAÇÃO COM GOOGLE SHEETS E GERAÇÃO DE DADOS ---
 
