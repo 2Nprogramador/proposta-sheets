@@ -373,18 +373,24 @@ if "request_type" in st.query_params:
             st.json({"erro": "Nenhum dado encontrado para a data informada."})
             st.stop()
 
-        # MAPEAMENTO COMPLETO DAS 7 TABELAS
+        # MAPEAMENTO COMPLETO (ATUALIZADO COM NOVOS RELATÓRIOS)
         mapping = {
-            # Relatórios de Soma (Vendas e Quantidade)
+            # --- Relatórios de Soma (Vendas e Quantidade) ---
             "total_por_cidade": ("total_por_cidade", "variacao_cidade", "sum"),
             "total_por_linha_produto": ("total_por_linha_produto", "variacao_linha_produto", "sum"),
             "total_por_tipo_cliente": ("total_por_tipo_cliente", "variacao_tipo_cliente", "sum"),
             "total_por_payment": ("total_por_payment", "variacao_payment", "sum"),
             "total_por_genero": ("total_por_genero", "variacao_genero", "sum"),
+            "vendas_por_hora": ("vendas_por_hora", "var_vendas_por_hora", "sum"), # Reutiliza lógica de soma (tem coluna Total)
             
-            # Relatórios de Distribuição (Crosstabs)
+            # --- Relatórios de Distribuição (Crosstabs) ---
             "distribuicao_cidade_tipo": ("crosstab_cidade_tipo_cliente", "variacao_cidade_tipo_cliente", "cross"),
-            "distribuicao_cidade_genero_tipo": ("crosstab_cidade_genero", "variacao_cidade_genero", "cross")
+            "distribuicao_cidade_genero_tipo": ("crosstab_cidade_genero", "variacao_cidade_genero", "cross"),
+            
+            # --- NOVOS: Relatórios de Métrica Única (Ticket Médio, Rating) ---
+            "ticket_medio_cidade": ("ticket_medio_cidade", "var_ticket_medio_cidade", "metric"),
+            "rating_produto": ("rating_produto", "var_rating_produto", "metric"),
+            "rating_pagamento": ("rating_pagamento", "var_rating_pagamento", "metric")
         }
 
         if report_name in mapping:
@@ -394,19 +400,33 @@ if "request_type" in st.query_params:
             df_var = relatorio_api[key_var]
 
             if report_type == "sum":
-                # Lógica para Total e Quantidade
+                # Lógica para Total e Quantidade (e Hora que tem Total)
+                # O rename ignora colunas que não existem, então funciona para hora tb
                 df_final = pd.concat([
                     df_main, 
                     df_var.rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})
                 ], axis=1)
+                
+            elif report_type == "metric":
+                # Lógica para Ticket Médio e Ratings
+                # Adiciona o prefixo "Var. " automaticamente no nome da coluna (ex: Var. Ticket Médio)
+                df_final = pd.concat([
+                    df_main,
+                    df_var.add_prefix("Var. ")
+                ], axis=1)
+                
             else:
-                # Lógica para Distribuições (Crosstabs) - Adiciona sufixo (Var) nas colunas
+                # Lógica para Distribuições (Crosstabs) - Adiciona sufixo (Var)
                 df_final = pd.concat([
                     df_main, 
                     df_var.add_suffix(" (Var)")
                 ], axis=1).fillna(0)
 
-            st.json(df_final.reset_index().to_dict(orient="records"))
+            # Preenche NaN com 0 ou null e converte para dicionário
+            st.json(df_final.fillna(0).reset_index().to_dict(orient="records"))
+            st.stop()
+        else:
+            st.json({"erro": f"Relatório '{report_name}' não encontrado no mapeamento."})
             st.stop()
 
 # =================================================================
