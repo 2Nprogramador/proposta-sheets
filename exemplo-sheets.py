@@ -1010,8 +1010,16 @@ with col1:
         st.markdown("---")
         st.markdown("##### ⭐ Qualidade vs. Faturamento (Matriz)")
         
-        # 1. Copia o dataframe
+        # --- CORREÇÃO AQUI ---
+        # 1. Primeiro, carregamos o dataframe do dicionário 'insights'
+        df_rating = insights['rating_faturamento'].copy()
+        
+        # 2. Definimos o índice (para o nome do produto não ficar repetido como coluna e index)
+        df_rating = df_rating.set_index('Product line')
+
+        # 3. Agora sim filtramos as colunas (pois a variável df_rating já existe)
         df_rating = df_rating[['Rating_Medio', 'Faturamento']]
+        # ---------------------
         
         # 4. Exibe
         st.dataframe(
