@@ -860,7 +860,7 @@ if not df_dia_raw.empty:
 
 # 4. GERA OS INSIGHTS USANDO APENAS O DF DO DIA
 # A função 'processar_insights_criativos' recebe 'df_dia_raw', que contém SÓ o dia escolhido.
-insights = processar_insights_criativos(df_dia_raw)
+insights = processar_insights_criativos(df_dia)
 
 # ==============================================================================
 
