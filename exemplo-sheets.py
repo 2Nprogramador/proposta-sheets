@@ -1012,7 +1012,7 @@ with col1: # Ou with col2
         
         # 1. PEGAR O DATAFRAME DO DICIONÁRIO (Isso evita o NameError)
         # A função retornou um dicionário, então extraímos a chave 'rating_faturamento'
-        df_rating = insights['rating_faturamento'].copy()
+        df_rating = rating_faturamento.copy()
         
         # 2. DEFINIR ÍNDICE E SELECIONAR COLUNAS
         # Define 'Product line' como índice para ficar fixo à esquerda
