@@ -824,7 +824,7 @@ with col2:
     st.markdown("#### ⏳ Análise Temporal e Eficiência")
 
     # B. Horário de Pico
-    st.markdown("##### ⏰ Análise Temporal por Hora)")
+    st.markdown("##### ⏰ Análise Temporal por Hora")
     df_hora = pd.concat([relatorio['vendas_por_hora'], relatorio['var_vendas_por_hora'].rename(columns={'Total': 'Var. Total'})], axis=1)
     st.dataframe(style_generic(df_hora, "Total", "R${:.2f}"), use_container_width=True)
     with st.expander("📊 Gráfico: Horários de Pico"):
