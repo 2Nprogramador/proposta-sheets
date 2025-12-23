@@ -25,77 +25,65 @@ import random
 @st.cache_data(ttl=600)
 
 def load_data_from_gsheets():
-
     """
-
-    Carrega os dados da Google Sheet usando as credenciais da Service Account.
-
+    Carrega os dados da Google Sheet com tratamento reforçado para números brasileiros.
     """
-
-    # st.info("Carregando dados...") # Opcional: manter comentado para não poluir visualmente
-
     try:
-
         creds_dict = st.secrets["gcp_service_account"]
-
         gsheets_url = st.secrets["gsheets"]["url"]
-
         worksheet_name = st.secrets["gsheets"]["worksheet_name"]
 
-
-
         gc = gspread.service_account_from_dict(creds_dict)
-
         sh = gc.open_by_url(gsheets_url)
-
         worksheet = sh.worksheet(worksheet_name)
 
-
-
         data = worksheet.get_all_records()
-
         df_sheet = pd.DataFrame.from_records(data)
 
-
-
+        # Remove linhas completamente vazias
         df_sheet.dropna(how='all', inplace=True)
-
         
-
+        # --- 1. TRATAMENTO DE DATA ---
         try:
-
             df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], errors='coerce')
-
         except Exception:
-
              df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
-
             
+        # --- 2. TRATAMENTO DE VALORES MONETÁRIOS (CRÍTICO) ---
+        # Resolve o problema de "1.200,50" virar erro ou número errado
+        if 'Total' in df_sheet.columns:
+            # Converte para string primeiro
+            df_sheet['Total'] = df_sheet['Total'].astype(str)
+            # Remove 'R$' e espaços se houver
+            df_sheet['Total'] = df_sheet['Total'].str.replace('R$', '', regex=False).str.strip()
+            # Se houver ponto como separador de milhar (ex: 1.000,00), remove o ponto
+            # CUIDADO: Só faça isso se sua planilha usa PONTO para milhar e VÍRGULA para decimal
+            if df_sheet['Total'].str.contains(',').any():
+                 df_sheet['Total'] = df_sheet['Total'].str.replace('.', '', regex=False)
+                 df_sheet['Total'] = df_sheet['Total'].str.replace(',', '.')
+            
+            df_sheet['Total'] = pd.to_numeric(df_sheet['Total'], errors='coerce')
 
-        df_sheet['Total'] = pd.to_numeric(df_sheet['Total'], errors='coerce')
+        # --- 3. TRATAMENTO DE QUANTIDADE ---
+        if 'Quantity' in df_sheet.columns:
+             # Garante que 1,0 vire 1.0
+             df_sheet['Quantity'] = df_sheet['Quantity'].astype(str).str.replace(',', '.')
+             df_sheet['Quantity'] = pd.to_numeric(df_sheet['Quantity'], errors='coerce').fillna(0).astype('Int64')
 
-        df_sheet['Quantity'] = pd.to_numeric(df_sheet['Quantity'], errors='coerce').astype('Int64')
+        # --- 4. TRATAMENTO DE RATING (Mantido) ---
+        if 'Rating' in df_sheet.columns:
+            df_sheet['Rating'] = df_sheet['Rating'].astype(str).str.replace(',', '.')
+            df_sheet['Rating'] = pd.to_numeric(df_sheet['Rating'], errors='coerce')
 
-
-
+        # Limpeza final de linhas inválidas
         df_sheet.dropna(subset=['Data', 'Total', 'Quantity'], inplace=True)
-
         df_sheet = df_sheet[df_sheet['Total'] > 0]
-
-        df_sheet.dropna(subset=['Data'], inplace=True)
-
         
-
         return df_sheet
 
-
-
     except Exception as e:
-
         st.error(f"Erro ao carregar dados: {e}")
-
         st.stop()
-
         return pd.DataFrame()
 
 
