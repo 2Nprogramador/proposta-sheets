@@ -26,7 +26,9 @@ import random
 
 def load_data_from_gsheets():
     """
-    Carrega dados tratando CADA LINHA individualmente para evitar erro de milhar.
+    Carrega os dados assumindo formato BRASILEIRO RÍGIDO:
+    - Ponto (.) é separador de milhar (deve ser removido).
+    - Vírgula (,) é separador decimal (deve virar ponto).
     """
     try:
         creds_dict = st.secrets["gcp_service_account"]
@@ -40,47 +42,56 @@ def load_data_from_gsheets():
         data = worksheet.get_all_records()
         df_sheet = pd.DataFrame.from_records(data)
 
+        # Remove linhas vazias
         df_sheet.dropna(how='all', inplace=True)
         
-        # --- FUNÇÃO DE LIMPEZA INDIVIDUAL (SEGURANÇA TOTAL) ---
-        def limpar_valor(valor):
-            if not valor: return 0
-            if isinstance(valor, (int, float)): return valor
+        # --- FUNÇÃO DE LIMPEZA ESTRITA (PT-BR) ---
+        def converter_numero_br(valor):
+            # Se for vazio ou nulo
+            if valor is None or str(valor).strip() == "":
+                return 0.0
             
-            valor_str = str(valor).strip().replace('R$', '').strip()
+            # Se o gspread já trouxe como número (float ou int), retorna direto
+            if isinstance(valor, (int, float)):
+                return float(valor)
             
-            # Lógica Brasileira Robusta:
-            if ',' in valor_str:
-                # Se tem vírgula, assume que é decimal (ex: 1.500,50)
-                valor_str = valor_str.replace('.', '').replace(',', '.')
-            else:
-                # Se NÃO tem vírgula, mas tem ponto (ex: 1.200), remove o ponto
-                valor_str = valor_str.replace('.', '')
-                
-            return pd.to_numeric(valor_str, errors='coerce')
+            valor_str = str(valor).strip()
+            
+            # 1. Remove R$ e espaços
+            valor_str = valor_str.replace('R$', '').strip()
+            
+            # 2. REMOVE OS PONTOS DE MILHAR (Crucial: 1.000 vira 1000)
+            valor_str = valor_str.replace('.', '')
+            
+            # 3. TROCA A VÍRGULA DECIMAL POR PONTO (Crucial: 50,20 vira 50.20)
+            valor_str = valor_str.replace(',', '.')
+            
+            try:
+                return float(valor_str)
+            except ValueError:
+                return 0.0
 
         # --- APLICAÇÃO ---
+        
         # 1. Data
         try:
             df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], errors='coerce')
         except:
             df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
 
-        # 2. Total (Usa o .apply para corrigir o erro de contagem)
+        # 2. Total (Aplica a conversão BR)
         if 'Total' in df_sheet.columns:
-            df_sheet['Total'] = df_sheet['Total'].apply(limpar_valor)
+            df_sheet['Total'] = df_sheet['Total'].apply(converter_numero_br)
 
-        # 3. Quantity
+        # 3. Quantity (Aplica a conversão BR e transforma em Inteiro)
         if 'Quantity' in df_sheet.columns:
-             # Para quantidade, assumimos que vírgula é decimal (ex: 1,5kg)
-             df_sheet['Quantity'] = df_sheet['Quantity'].apply(lambda x: str(x).replace(',', '.') if isinstance(x, str) else x)
-             df_sheet['Quantity'] = pd.to_numeric(df_sheet['Quantity'], errors='coerce').fillna(0).astype('Int64')
+             df_sheet['Quantity'] = df_sheet['Quantity'].apply(converter_numero_br).astype('Int64')
 
-        # 4. Rating (Mesma lógica de substituir vírgula)
+        # 4. Rating (Aplica a conversão BR - Rating 4,5 vira 4.5)
         if 'Rating' in df_sheet.columns:
-            df_sheet['Rating'] = df_sheet['Rating'].apply(lambda x: str(x).replace(',', '.') if isinstance(x, str) else x)
-            df_sheet['Rating'] = pd.to_numeric(df_sheet['Rating'], errors='coerce')
+            df_sheet['Rating'] = df_sheet['Rating'].apply(converter_numero_br)
 
+        # Limpeza final
         df_sheet.dropna(subset=['Data', 'Total', 'Quantity'], inplace=True)
         df_sheet = df_sheet[df_sheet['Total'] > 0]
         
