@@ -1019,12 +1019,6 @@ with col1:
         st.markdown("##### ⭐ Qualidade vs. Faturamento (Matriz)")
         
         # 1. Copia o dataframe
-        df_rating = insights['rating_faturamento'].copy()
-        
-        # 2. Define o índice como 'Product line'
-        df_rating = df_rating.set_index('Product line')
-        
-        # 3. Força a exibição APENAS das colunas desejadas (remove qualquer outra sujeira)
         df_rating = df_rating[['Rating_Medio', 'Faturamento']]
         
         # 4. Exibe
