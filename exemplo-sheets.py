@@ -26,9 +26,8 @@ import random
 
 def load_data_from_gsheets():
     """
-    Carrega os dados assumindo formato BRASILEIRO RÍGIDO:
-    - Ponto (.) é separador de milhar (deve ser removido).
-    - Vírgula (,) é separador decimal (deve virar ponto).
+    Carrega os dados da Google Sheet evitando a multiplicação por 100
+    ao verificar se o dado já é numérico antes de limpar.
     """
     try:
         creds_dict = st.secrets["gcp_service_account"]
@@ -42,28 +41,24 @@ def load_data_from_gsheets():
         data = worksheet.get_all_records()
         df_sheet = pd.DataFrame.from_records(data)
 
-        # Remove linhas vazias
         df_sheet.dropna(how='all', inplace=True)
         
-        # --- FUNÇÃO DE LIMPEZA ESTRITA (PT-BR) ---
-        def converter_numero_br(valor):
-            # Se for vazio ou nulo
-            if valor is None or str(valor).strip() == "":
-                return 0.0
-            
-            # Se o gspread já trouxe como número (float ou int), retorna direto
+        # --- FUNÇÃO INTELIGENTE DE CONVERSÃO ---
+        def corrigir_valor_brasileiro(valor):
+            # 1. Se já for número (float ou int), retorna ele mesmo
+            # Isso evita que 1410.36 vire 141036
             if isinstance(valor, (int, float)):
                 return float(valor)
             
+            # 2. Se for texto, faz a limpeza
             valor_str = str(valor).strip()
+            if not valor_str: return 0.0
             
-            # 1. Remove R$ e espaços
             valor_str = valor_str.replace('R$', '').strip()
             
-            # 2. REMOVE OS PONTOS DE MILHAR (Crucial: 1.000 vira 1000)
+            # Remove ponto de milhar (1.000 -> 1000)
             valor_str = valor_str.replace('.', '')
-            
-            # 3. TROCA A VÍRGULA DECIMAL POR PONTO (Crucial: 50,20 vira 50.20)
+            # Troca vírgula decimal por ponto (50,20 -> 50.20)
             valor_str = valor_str.replace(',', '.')
             
             try:
@@ -71,7 +66,7 @@ def load_data_from_gsheets():
             except ValueError:
                 return 0.0
 
-        # --- APLICAÇÃO ---
+        # --- APLICAÇÃO SEGURA ---
         
         # 1. Data
         try:
@@ -79,17 +74,20 @@ def load_data_from_gsheets():
         except:
             df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
 
-        # 2. Total (Aplica a conversão BR)
+        # 2. Total e Unit Price (Usa a função segura)
         if 'Total' in df_sheet.columns:
-            df_sheet['Total'] = df_sheet['Total'].apply(converter_numero_br)
+            df_sheet['Total'] = df_sheet['Total'].apply(corrigir_valor_brasileiro)
+            
+        if 'Unit price' in df_sheet.columns:
+             df_sheet['Unit price'] = df_sheet['Unit price'].apply(corrigir_valor_brasileiro)
 
-        # 3. Quantity (Aplica a conversão BR e transforma em Inteiro)
+        # 3. Quantity
         if 'Quantity' in df_sheet.columns:
-             df_sheet['Quantity'] = df_sheet['Quantity'].apply(converter_numero_br).astype('Int64')
+             df_sheet['Quantity'] = df_sheet['Quantity'].apply(corrigir_valor_brasileiro).astype('Int64')
 
-        # 4. Rating (Aplica a conversão BR - Rating 4,5 vira 4.5)
+        # 4. Rating
         if 'Rating' in df_sheet.columns:
-            df_sheet['Rating'] = df_sheet['Rating'].apply(converter_numero_br)
+            df_sheet['Rating'] = df_sheet['Rating'].apply(corrigir_valor_brasileiro)
 
         # Limpeza final
         df_sheet.dropna(subset=['Data', 'Total', 'Quantity'], inplace=True)
