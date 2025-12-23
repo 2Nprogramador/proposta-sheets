@@ -72,27 +72,38 @@ def load_data_from_gsheets():
 
 
 def processar_insights_criativos(df_dia):
+    """
+    Gera dataframes específicos para os novos insights baseados no dia selecionado.
+    Replica a lógica de agregação do script Google Apps Script/n8n.
+    """
     if df_dia.empty:
         return None
 
-    # ... (código anterior de Hora mantido) ...
+    # 1. Tratamento de Hora (Extrair apenas a hora inteira para o insight de Golden Hours)
     try:
+        # Tenta converter a string 'HH:MM' para datetime e extrair a hora
         df_dia['Hora_Int'] = pd.to_datetime(df_dia['Time'], format='%H:%M').dt.hour
     except:
+        # Se falhar, define como 0 para não quebrar o código
         df_dia['Hora_Int'] = 0
-    
+        
+    # --- INSIGHT 1: Vendas por Hora (Golden Hours) ---
     vendas_por_hora = df_dia.groupby('Hora_Int')[['Total', 'Quantity']].sum().reset_index()
     
+    # --- INSIGHT 2: Ticket Médio por Tipo de Cliente ---
+    # Lógica: Soma tudo o que cada tipo gastou e divide pelo número de compras
     ticket_medio_tipo = df_dia.groupby('Customer type').agg(
         Faturamento=('Total', 'sum'),
         Transacoes=('Invoice ID', 'count')
-    ).reset_index()
+    )
     ticket_medio_tipo['Ticket_Medio'] = ticket_medio_tipo['Faturamento'] / ticket_medio_tipo['Transacoes']
+    ticket_medio_tipo = ticket_medio_tipo.reset_index()
 
-    # --- CORREÇÃO DA MATRIZ ---
-    # Igual ao script: groupKey = Product line
-    # stats[groupKey].Total += row[idxTotal] (SUM)
-    # item["Rating_Medio"] = SumRating / Count (MEAN)
+    # --- INSIGHT 3: Rating vs Faturamento (Matriz de Qualidade) ---
+    # LÓGICA IDÊNTICA AO N8N:
+    # 1. Agrupa por 'Product line'
+    # 2. Rating: Calcula a MÉDIA (mean) dos valores (já tratados como float no load_data)
+    # 3. Faturamento: Calcula a SOMA (sum) da coluna Total
     rating_faturamento = df_dia.groupby('Product line').agg(
         Rating_Medio=('Rating', 'mean'), 
         Faturamento=('Total', 'sum')
@@ -103,7 +114,6 @@ def processar_insights_criativos(df_dia):
         "ticket_medio_tipo": ticket_medio_tipo,
         "rating_faturamento": rating_faturamento
     }
-
 
 def salvar_dados_gsheets(df_novos_dados):
 
