@@ -780,7 +780,7 @@ with col1:
 
     # --- NOVOS RELATÓRIOS COLUNA 1 ---
     st.markdown("---")
-    st.markdown("#### 🚀 Novos Insights de Performance")
+    
     
     # A. Ticket Médio
     st.markdown("##### 💵 Ticket Médio por Cidade (Average Order Value)")
