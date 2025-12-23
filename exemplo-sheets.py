@@ -26,7 +26,7 @@ import random
 
 def load_data_from_gsheets():
     """
-    Carrega os dados da Google Sheet com tratamento reforçado para números brasileiros.
+    Carrega dados tratando CADA LINHA individualmente para evitar erro de milhar.
     """
     try:
         creds_dict = st.secrets["gcp_service_account"]
@@ -40,42 +40,47 @@ def load_data_from_gsheets():
         data = worksheet.get_all_records()
         df_sheet = pd.DataFrame.from_records(data)
 
-        # Remove linhas completamente vazias
         df_sheet.dropna(how='all', inplace=True)
         
-        # --- 1. TRATAMENTO DE DATA ---
+        # --- FUNÇÃO DE LIMPEZA INDIVIDUAL (SEGURANÇA TOTAL) ---
+        def limpar_valor(valor):
+            if not valor: return 0
+            if isinstance(valor, (int, float)): return valor
+            
+            valor_str = str(valor).strip().replace('R$', '').strip()
+            
+            # Lógica Brasileira Robusta:
+            if ',' in valor_str:
+                # Se tem vírgula, assume que é decimal (ex: 1.500,50)
+                valor_str = valor_str.replace('.', '').replace(',', '.')
+            else:
+                # Se NÃO tem vírgula, mas tem ponto (ex: 1.200), remove o ponto
+                valor_str = valor_str.replace('.', '')
+                
+            return pd.to_numeric(valor_str, errors='coerce')
+
+        # --- APLICAÇÃO ---
+        # 1. Data
         try:
             df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], errors='coerce')
-        except Exception:
-             df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
-            
-        # --- 2. TRATAMENTO DE VALORES MONETÁRIOS (CRÍTICO) ---
-        # Resolve o problema de "1.200,50" virar erro ou número errado
-        if 'Total' in df_sheet.columns:
-            # Converte para string primeiro
-            df_sheet['Total'] = df_sheet['Total'].astype(str)
-            # Remove 'R$' e espaços se houver
-            df_sheet['Total'] = df_sheet['Total'].str.replace('R$', '', regex=False).str.strip()
-            # Se houver ponto como separador de milhar (ex: 1.000,00), remove o ponto
-            # CUIDADO: Só faça isso se sua planilha usa PONTO para milhar e VÍRGULA para decimal
-            if df_sheet['Total'].str.contains(',').any():
-                 df_sheet['Total'] = df_sheet['Total'].str.replace('.', '', regex=False)
-                 df_sheet['Total'] = df_sheet['Total'].str.replace(',', '.')
-            
-            df_sheet['Total'] = pd.to_numeric(df_sheet['Total'], errors='coerce')
+        except:
+            df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
 
-        # --- 3. TRATAMENTO DE QUANTIDADE ---
+        # 2. Total (Usa o .apply para corrigir o erro de contagem)
+        if 'Total' in df_sheet.columns:
+            df_sheet['Total'] = df_sheet['Total'].apply(limpar_valor)
+
+        # 3. Quantity
         if 'Quantity' in df_sheet.columns:
-             # Garante que 1,0 vire 1.0
-             df_sheet['Quantity'] = df_sheet['Quantity'].astype(str).str.replace(',', '.')
+             # Para quantidade, assumimos que vírgula é decimal (ex: 1,5kg)
+             df_sheet['Quantity'] = df_sheet['Quantity'].apply(lambda x: str(x).replace(',', '.') if isinstance(x, str) else x)
              df_sheet['Quantity'] = pd.to_numeric(df_sheet['Quantity'], errors='coerce').fillna(0).astype('Int64')
 
-        # --- 4. TRATAMENTO DE RATING (Mantido) ---
+        # 4. Rating (Mesma lógica de substituir vírgula)
         if 'Rating' in df_sheet.columns:
-            df_sheet['Rating'] = df_sheet['Rating'].astype(str).str.replace(',', '.')
+            df_sheet['Rating'] = df_sheet['Rating'].apply(lambda x: str(x).replace(',', '.') if isinstance(x, str) else x)
             df_sheet['Rating'] = pd.to_numeric(df_sheet['Rating'], errors='coerce')
 
-        # Limpeza final de linhas inválidas
         df_sheet.dropna(subset=['Data', 'Total', 'Quantity'], inplace=True)
         df_sheet = df_sheet[df_sheet['Total'] > 0]
         
@@ -85,7 +90,6 @@ def load_data_from_gsheets():
         st.error(f"Erro ao carregar dados: {e}")
         st.stop()
         return pd.DataFrame()
-
 
 def processar_insights_criativos(df_dia):
     """
