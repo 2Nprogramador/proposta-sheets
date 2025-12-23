@@ -25,77 +25,40 @@ import random
 @st.cache_data(ttl=600)
 
 def load_data_from_gsheets():
-
-    """
-
-    Carrega os dados da Google Sheet usando as credenciais da Service Account.
-
-    """
-
-    # st.info("Carregando dados...") # Opcional: manter comentado para não poluir visualmente
-
     try:
-
         creds_dict = st.secrets["gcp_service_account"]
-
         gsheets_url = st.secrets["gsheets"]["url"]
-
         worksheet_name = st.secrets["gsheets"]["worksheet_name"]
 
-
-
         gc = gspread.service_account_from_dict(creds_dict)
-
         sh = gc.open_by_url(gsheets_url)
-
         worksheet = sh.worksheet(worksheet_name)
 
-
-
         data = worksheet.get_all_records()
-
         df_sheet = pd.DataFrame.from_records(data)
 
-
-
         df_sheet.dropna(how='all', inplace=True)
-
         
-
         try:
-
             df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], errors='coerce')
-
         except Exception:
-
              df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
-
             
-
         df_sheet['Total'] = pd.to_numeric(df_sheet['Total'], errors='coerce')
-
         df_sheet['Quantity'] = pd.to_numeric(df_sheet['Quantity'], errors='coerce').astype('Int64')
-
-
+        
+        # --- NOVO: Converter Rating para número ---
+        df_sheet['Rating'] = pd.to_numeric(df_sheet['Rating'], errors='coerce') 
 
         df_sheet.dropna(subset=['Data', 'Total', 'Quantity'], inplace=True)
-
         df_sheet = df_sheet[df_sheet['Total'] > 0]
-
         df_sheet.dropna(subset=['Data'], inplace=True)
-
         
-
         return df_sheet
 
-
-
     except Exception as e:
-
         st.error(f"Erro ao carregar dados: {e}")
-
         st.stop()
-
         return pd.DataFrame()
 
 
@@ -249,179 +212,146 @@ def gerar_dados_proximo_dia(df_atual):
 st.set_page_config(layout="wide", page_title="Dashboard de Vendas")
 
 def relatorio_por_dia_com_variacoes(dia, data_df):
-
     if isinstance(dia, (pd.Timestamp, datetime.datetime)):
-
         dia_date = dia.date()
-
     else:
-
         dia_date = dia
 
-
-
     dia_timestamp = pd.to_datetime(dia_date)
-
     dia_anterior_timestamp = dia_timestamp - pd.Timedelta(days=1)
 
-
-
     df_dia = data_df[data_df['Data'].dt.date == dia_date].copy()
-
     df_dia_anterior = data_df[data_df['Data'].dt.date == dia_anterior_timestamp.date()].copy()
 
-
-
     if df_dia.empty:
-
         return {}
-
     
-
-    # Filtragem de linhas de 'total'/'quantity' se existirem no texto
-
+    # Limpeza básica
     for col in ['City', 'Customer type', 'Gender', 'Product line', 'Payment']:
-
         if col in df_dia.columns:
-
             df_dia = df_dia[~df_dia[col].astype(str).str.lower().isin(['total', 'quantity'])]
-
         if col in df_dia_anterior.columns:
-
             df_dia_anterior = df_dia_anterior[~df_dia_anterior[col].astype(str).str.lower().isin(['total', 'quantity'])]
 
-
-
     if df_dia.empty:
-
         return {}
-
-
 
     is_first_day_with_data = df_dia_anterior.empty and not df_dia.empty
 
-
-
+    # --- HELPER: Soma (já existia) ---
     def calcular_totais_e_variacao(df_atual, df_anterior, coluna_agrupadora):
-
         total_atual = df_atual.groupby(coluna_agrupadora)[['Total', 'Quantity']].sum()
-
         
-
         if is_first_day_with_data:
-
             variacao = total_atual.copy()
-
             variacao[:] = pd.NA 
-
             return total_atual, variacao
-
         else:
-
             total_anterior = df_anterior.groupby(coluna_agrupadora)[['Total', 'Quantity']].sum()
-
             base_index = total_atual.index.union(total_anterior.index)
-
             total_atual_reindex = total_atual.reindex(base_index, fill_value=0)
-
             total_anterior_reindex = total_anterior.reindex(base_index, fill_value=0)
-
             variacao = total_atual_reindex - total_anterior_reindex
-
             return total_atual_reindex, variacao
 
+    # --- HELPER: Crosstab (já existia) ---
+    def calcular_crosstab_e_variacao(df_atual, df_anterior, index_cols, col_cols):
+        atual = df_atual.groupby(index_cols)[col_cols].value_counts().unstack(fill_value=0)
+        if is_first_day_with_data:
+            variacao = atual.applymap(lambda x: pd.NA)
+            return atual, variacao
+        else:
+            anterior = df_anterior.groupby(index_cols)[col_cols].value_counts().unstack(fill_value=0)
+            idx = atual.index.union(anterior.index)
+            cols = atual.columns.union(anterior.columns)
+            atual_reindex = atual.reindex(index=idx, columns=cols, fill_value=0)
+            anterior_reindex = anterior.reindex(index=idx, columns=cols, fill_value=0)
+            variacao = atual_reindex - anterior_reindex
+            return atual, variacao
+            
+    # --- NOVO HELPER: Média (Rating, Ticket Medio) ---
+    def calcular_media_e_variacao(df_atual, df_anterior, coluna_agrupadora, coluna_valor, nome_metrica):
+        # Calcula média atual
+        media_atual = df_atual.groupby(coluna_agrupadora)[[coluna_valor]].mean()
+        media_atual.columns = [nome_metrica]
+        
+        if is_first_day_with_data:
+            variacao = media_atual.copy()
+            variacao[:] = pd.NA
+            return media_atual, variacao
+        else:
+            media_anterior = df_anterior.groupby(coluna_agrupadora)[[coluna_valor]].mean()
+            media_anterior.columns = [nome_metrica]
+            
+            base_index = media_atual.index.union(media_anterior.index)
+            media_atual_reindex = media_atual.reindex(base_index, fill_value=0)
+            media_anterior_reindex = media_anterior.reindex(base_index, fill_value=0)
+            
+            variacao = media_atual_reindex - media_anterior_reindex
+            return media_atual_reindex, variacao
 
+    # --- NOVO HELPER: Hora ---
+    def extrair_hora_e_agrupar(df_in):
+        if df_in.empty: return pd.DataFrame()
+        df_temp = df_in.copy()
+        # Extrai a hora do formato "HH:MM"
+        df_temp['Hora'] = df_temp['Time'].astype(str).str.split(':').str[0].astype(int)
+        return df_temp.groupby('Hora')[['Total']].sum()
 
+    # --- CÁLCULOS ANTIGOS ---
     total_por_cidade, variacao_cidade = calcular_totais_e_variacao(df_dia, df_dia_anterior, 'City')
-
     total_por_tipo_cliente, variacao_tipo_cliente = calcular_totais_e_variacao(df_dia, df_dia_anterior, 'Customer type')
-
     total_por_genero, variacao_genero = calcular_totais_e_variacao(df_dia, df_dia_anterior, 'Gender')
-
     total_por_linha_produto, variacao_linha_produto = calcular_totais_e_variacao(df_dia, df_dia_anterior, 'Product line')
-
     total_por_payment, variacao_payment = calcular_totais_e_variacao(df_dia, df_dia_anterior, 'Payment')
 
-
-
-    def calcular_crosstab_e_variacao(df_atual, df_anterior, index_cols, col_cols):
-
-        atual = df_atual.groupby(index_cols)[col_cols].value_counts().unstack(fill_value=0)
-
-        if is_first_day_with_data:
-
-            variacao = atual.applymap(lambda x: pd.NA)
-
-            return atual, variacao
-
-        else:
-
-            anterior = df_anterior.groupby(index_cols)[col_cols].value_counts().unstack(fill_value=0)
-
-            idx = atual.index.union(anterior.index)
-
-            cols = atual.columns.union(anterior.columns)
-
-            atual_reindex = atual.reindex(index=idx, columns=cols, fill_value=0)
-
-            anterior_reindex = anterior.reindex(index=idx, columns=cols, fill_value=0)
-
-            variacao = atual_reindex - anterior_reindex
-
-            return atual, variacao
-
-
-
     crosstab_cidade_tipo_cliente, variacao_cidade_tipo_cliente = calcular_crosstab_e_variacao(df_dia, df_dia_anterior, 'City', 'Customer type')
-
     crosstab_cidade_genero, variacao_cidade_genero = calcular_crosstab_e_variacao(df_dia, df_dia_anterior, ['City', 'Gender'], 'Customer type')
-
     crosstab_cidade_product, variacao_cidade_product = calcular_crosstab_e_variacao(df_dia, df_dia_anterior, 'City', 'Product line')
-
     crosstab_cidade_payment, variacao_cidade_payment = calcular_crosstab_e_variacao(df_dia, df_dia_anterior, ['City', 'Payment'], 'Gender')
 
+    # --- CÁLCULOS NOVOS ---
+    
+    # A. Ticket Médio (Total agrupado por Cidade)
+    ticket_medio_cidade, var_ticket_medio_cidade = calcular_media_e_variacao(df_dia, df_dia_anterior, 'City', 'Total', 'Ticket Médio')
+    
+    # B. Análise Temporal (Soma de Total por Hora)
+    vendas_hora_atual = extrair_hora_e_agrupar(df_dia)
+    if is_first_day_with_data:
+         var_vendas_hora = vendas_hora_atual.copy()
+         var_vendas_hora[:] = pd.NA
+    else:
+         vendas_hora_anterior = extrair_hora_e_agrupar(df_dia_anterior)
+         idx_h = vendas_hora_atual.index.union(vendas_hora_anterior.index)
+         atual_h = vendas_hora_atual.reindex(idx_h, fill_value=0)
+         ant_h = vendas_hora_anterior.reindex(idx_h, fill_value=0)
+         vendas_hora_atual = atual_h # Atualiza para ter index completo
+         var_vendas_hora = atual_h - ant_h
 
+    # C. Qualidade e Satisfação (Rating por Linha de Produto)
+    rating_produto, var_rating_produto = calcular_media_e_variacao(df_dia, df_dia_anterior, 'Product line', 'Rating', 'Média Rating')
+    
+    # D. Eficiência de Pagamento (Rating por Método de Pagamento)
+    rating_pagamento, var_rating_pagamento = calcular_media_e_variacao(df_dia, df_dia_anterior, 'Payment', 'Rating', 'Média Rating')
 
     return {
-
-        "total_por_cidade": total_por_cidade,
-
-        "variacao_cidade": variacao_cidade,
-
-        "total_por_tipo_cliente": total_por_tipo_cliente,
-
-        "variacao_tipo_cliente": variacao_tipo_cliente,
-
-        "total_por_genero": total_por_genero,
-
-        "variacao_genero": variacao_genero,
-
-        "total_por_linha_produto": total_por_linha_produto,
-
-        "variacao_linha_produto": variacao_linha_produto,
-
-        "total_por_payment": total_por_payment,
-
-        "variacao_payment": variacao_payment,
-
-        "crosstab_cidade_tipo_cliente": crosstab_cidade_tipo_cliente,
-
-        "crosstab_cidade_genero": crosstab_cidade_genero,
-
-        "crosstab_cidade_product": crosstab_cidade_product,
-
-        "crosstab_cidade_payment": crosstab_cidade_payment,
-
-        "variacao_cidade_tipo_cliente": variacao_cidade_tipo_cliente,
-
-        "variacao_cidade_genero": variacao_cidade_genero,
-
-        "variacao_cidade_product": variacao_cidade_product,
-
-        "variacao_cidade_payment": variacao_cidade_payment,
-
+        # Antigos
+        "total_por_cidade": total_por_cidade, "variacao_cidade": variacao_cidade,
+        "total_por_tipo_cliente": total_por_tipo_cliente, "variacao_tipo_cliente": variacao_tipo_cliente,
+        "total_por_genero": total_por_genero, "variacao_genero": variacao_genero,
+        "total_por_linha_produto": total_por_linha_produto, "variacao_linha_produto": variacao_linha_produto,
+        "total_por_payment": total_por_payment, "variacao_payment": variacao_payment,
+        "crosstab_cidade_tipo_cliente": crosstab_cidade_tipo_cliente, "variacao_cidade_tipo_cliente": variacao_cidade_tipo_cliente,
+        "crosstab_cidade_genero": crosstab_cidade_genero, "variacao_cidade_genero": variacao_cidade_genero,
+        "crosstab_cidade_product": crosstab_cidade_product, "variacao_cidade_product": variacao_cidade_product,
+        "crosstab_cidade_payment": crosstab_cidade_payment, "variacao_cidade_payment": variacao_cidade_payment,
+        
+        # Novos
+        "ticket_medio_cidade": ticket_medio_cidade, "var_ticket_medio_cidade": var_ticket_medio_cidade,
+        "vendas_por_hora": vendas_hora_atual, "var_vendas_por_hora": var_vendas_hora,
+        "rating_produto": rating_produto, "var_rating_produto": var_rating_produto,
+        "rating_pagamento": rating_pagamento, "var_rating_pagamento": var_rating_pagamento
     }
-
 
 # Carregando os dados da planilha
 
@@ -700,196 +630,174 @@ with st.expander("Alertas Importantes", expanded=True if total_alertas > 0 else 
 
 
 
-# --- PLOTS ---
-
 st.subheader(f"Relatório Detalhado de Vendas para o dia {dia_selecionado}")
+st.markdown("---")
 
-col1, col2 = st.columns(2)
-
-
-
+# Funções de Estilo e Plotagem
 def style_dataframe(df_input):
-
     is_first_day = (dia_selecionado == primeiro_dia_disponivel)
-
     format_dict = {"Total": "R${:.2f}", "Quantity": "{:.0f}"}
-
     var_format_dict = {"Var. Total": "R${:+.2f}", "Var. Quantity": "{:+.0f}"}
-
     if is_first_day:
-
         var_format_dict = {
-
             "Var. Total": lambda x: "N/A" if pd.isna(x) else ("R${:+.2f}".format(x) if pd.notna(x) else "-"),
-
             "Var. Quantity": lambda x: "N/A" if pd.isna(x) else ("{:+.0f}".format(x) if pd.notna(x) else "-")
-
         }
-
     format_dict.update(var_format_dict)
-
     return df_input.style.format(format_dict, na_rep="-")
 
-
+def style_generic(df_input, col_name, format_str):
+    """Estiliza tabelas genéricas (Ticket Medio, Rating, etc)"""
+    is_first_day = (dia_selecionado == primeiro_dia_disponivel)
+    col_var = f"Var. {col_name}"
+    
+    format_dict = {col_name: format_str}
+    
+    if is_first_day:
+        format_dict[col_var] = lambda x: "N/A" if pd.isna(x) else (format_str.replace("{:", "{:+").format(x) if pd.notna(x) else "-")
+    else:
+        format_dict[col_var] = format_str.replace("{:", "{:+") # Adiciona sinal + para variação
+        
+    return df_input.style.format(format_dict, na_rep="-")
 
 def plot_total_and_variation(df_total, df_var, id_col, title):
-
     df_var_renamed = df_var.rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})
-
     df_concat = pd.concat([df_total.round(2), df_var_renamed.round(2)], axis=1).reset_index()
-
     
-
     if 'index' in df_concat.columns:
-
         df_concat.rename(columns={'index': id_col}, inplace=True)
-
         
-
     df_plot = df_concat.melt(
-
         id_vars=id_col, 
-
         value_vars=['Total', 'Var. Total', 'Quantity', 'Var. Quantity'], 
-
         var_name='Métrica', 
-
         value_name='Valor'
-
     ).dropna(subset=['Valor'])
-
     
-
     color_map = {
-
         'Total': 'rgb(76, 120, 168)', 'Quantity': 'rgb(30, 60, 100)',
-
         'Var. Total': 'rgb(228, 87, 86)', 'Var. Quantity': 'rgb(190, 40, 40)'
-
     }
 
-
-
     fig = px.bar(
-
         df_plot, x=id_col, y='Valor', color='Métrica', barmode='group', 
-
-        title=f"{title} - Total, Quantidade e Variação",
-
+        title=f"{title}",
         template='plotly_white', color_discrete_map=color_map,
-
         labels={'Métrica': 'Variável'}
-
     )
-
-    fig.update_layout(height=450, title_x=0.5)
-
+    fig.update_layout(height=400, title_x=0.5, margin=dict(l=20, r=20, t=40, b=20))
     fig.add_hline(y=0, line_dash="dash", line_color="gray")
-
     return fig
 
+def plot_generic(df_main, df_var, id_col, val_col, title, color_main='rgb(50, 168, 82)', color_var='rgb(50, 168, 140)'):
+    """Plotter genérico para métricas únicas (Rating, Ticket Médio, etc)"""
+    col_var_name = f"Var. {val_col}"
+    df_var_renamed = df_var.rename(columns={val_col: col_var_name})
+    df_concat = pd.concat([df_main, df_var_renamed], axis=1).reset_index()
+    
+    if 'index' in df_concat.columns:
+        df_concat.rename(columns={'index': id_col}, inplace=True)
+        
+    df_plot = df_concat.melt(
+        id_vars=id_col, 
+        value_vars=[val_col, col_var_name], 
+        var_name='Métrica', 
+        value_name='Valor'
+    ).dropna(subset=['Valor'])
 
+    color_map = {val_col: color_main, col_var_name: color_var}
+
+    fig = px.bar(
+        df_plot, x=id_col, y='Valor', color='Métrica', barmode='group', 
+        title=title, template='plotly_white', color_discrete_map=color_map
+    )
+    fig.update_layout(height=400, title_x=0.5, margin=dict(l=20, r=20, t=40, b=20))
+    fig.add_hline(y=0, line_dash="dash", line_color="gray")
+    return fig
+
+# --- DISTRIBUIÇÃO DAS COLUNAS ---
+col1, col2 = st.columns(2)
 
 with col1:
-
+    # 1. Total por Cidade
     st.markdown("##### Total de Vendas por Cidade e Variação:")
-
     df_cidade_concat = pd.concat([relatorio['total_por_cidade'].round(2), relatorio['variacao_cidade'].round(2).rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
-
     st.dataframe(style_dataframe(df_cidade_concat), use_container_width=True)
+    with st.expander("📊 Gráfico: Vendas por Cidade"):
+        st.plotly_chart(plot_total_and_variation(relatorio['total_por_cidade'], relatorio['variacao_cidade'], 'City', "Métricas por Cidade"), use_container_width=True)
 
-    with st.expander("Gráfico de Vendas e Quantidades por Cidade"):
-
-        st.plotly_chart(plot_total_and_variation(relatorio['total_por_cidade'].round(2), relatorio['variacao_cidade'].round(2), 'City', "Métricas por Cidade"), use_container_width=True)
-
-
-
-    st.markdown("##### Total de vendas por Tipo de Cliente e Variação:")
-
+    # 2. Total por Tipo de Cliente
+    st.markdown("##### Total de vendas por Tipo de Cliente:")
     df_cliente_concat = pd.concat([relatorio['total_por_tipo_cliente'].round(2), relatorio['variacao_tipo_cliente'].round(2).rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
-
     st.dataframe(style_dataframe(df_cliente_concat), use_container_width=True)
+    with st.expander("📊 Gráfico: Vendas por Tipo de Cliente"):
+        st.plotly_chart(plot_total_and_variation(relatorio['total_por_tipo_cliente'], relatorio['variacao_tipo_cliente'], 'Customer type', "Métricas por Tipo"), use_container_width=True)
 
-    with st.expander("Gráfico de Vendas e Quantidades por Tipo de Cliente"):
-
-        st.plotly_chart(plot_total_and_variation(relatorio['total_por_tipo_cliente'].round(2), relatorio['variacao_tipo_cliente'].round(2), 'Customer type', "Métricas por Tipo de Cliente"), use_container_width=True)
-
-
-
-    st.markdown("##### Total de vendas por Gênero e Variação:")
-
+    # 3. Total por Gênero
+    st.markdown("##### Total de vendas por Gênero:")
     df_genero_concat = pd.concat([relatorio['total_por_genero'].round(2), relatorio['variacao_genero'].round(2).rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
-
     st.dataframe(style_dataframe(df_genero_concat), use_container_width=True)
+    with st.expander("📊 Gráfico: Vendas por Gênero"):
+        st.plotly_chart(plot_total_and_variation(relatorio['total_por_genero'], relatorio['variacao_genero'], 'Gender', "Métricas por Gênero"), use_container_width=True)
 
-    with st.expander("Gráfico de Vendas e Quantidades por Gênero"):
+    # --- NOVOS RELATÓRIOS COLUNA 1 ---
+    st.markdown("---")
+    st.markdown("#### 🚀 Novos Insights de Performance")
+    
+    # A. Ticket Médio
+    st.markdown("##### 💵 Ticket Médio por Cidade (Average Order Value)")
+    df_ticket = pd.concat([relatorio['ticket_medio_cidade'], relatorio['var_ticket_medio_cidade'].rename(columns={'Ticket Médio': 'Var. Ticket Médio'})], axis=1)
+    st.dataframe(style_generic(df_ticket, "Ticket Médio", "R${:.2f}"), use_container_width=True)
+    with st.expander("📊 Gráfico: Ticket Médio por Cidade"):
+        st.plotly_chart(plot_generic(relatorio['ticket_medio_cidade'], relatorio['var_ticket_medio_cidade'], 'City', 'Ticket Médio', "Ticket Médio por Cidade", color_main='#FF9900', color_var='#CC7A00'), use_container_width=True)
 
-        st.plotly_chart(plot_total_and_variation(relatorio['total_por_genero'].round(2), relatorio['variacao_genero'].round(2), 'Gender', "Métricas por Gênero"), use_container_width=True)
-
+    # C. Qualidade (Rating por Produto)
+    st.markdown("##### ⭐ Qualidade e Satisfação (Rating por Produto)")
+    df_rating_prod = pd.concat([relatorio['rating_produto'], relatorio['var_rating_produto'].rename(columns={'Média Rating': 'Var. Média Rating'})], axis=1)
+    st.dataframe(style_generic(df_rating_prod, "Média Rating", "{:.1f}"), use_container_width=True)
+    with st.expander("📊 Gráfico: Rating por Produto"):
+        st.plotly_chart(plot_generic(relatorio['rating_produto'], relatorio['var_rating_produto'], 'Product line', 'Média Rating', "Média de Avaliação por Produto", color_main='#9900FF', color_var='#7A00CC'), use_container_width=True)
 
 
 with col2:
-
-    st.markdown("##### Total de vendas por Linha de Produto e Variação:")
-
+    # 4. Total por Produto
+    st.markdown("##### Total de vendas por Linha de Produto:")
     df_produto_concat = pd.concat([relatorio['total_por_linha_produto'].round(2), relatorio['variacao_linha_produto'].round(2).rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
-
     st.dataframe(style_dataframe(df_produto_concat), use_container_width=True)
+    with st.expander("📊 Gráfico: Vendas por Produto"):
+        st.plotly_chart(plot_total_and_variation(relatorio['total_por_linha_produto'], relatorio['variacao_linha_produto'], 'Product line', "Métricas por Linha de Produto"), use_container_width=True)
 
-    with st.expander("Gráfico de Vendas e Quantidades por Linha de Produto"):
-
-        st.plotly_chart(plot_total_and_variation(relatorio['total_por_linha_produto'].round(2), relatorio['variacao_linha_produto'].round(2), 'Product line', "Métricas por Linha de Produto"), use_container_width=True)
-
-
-
-    st.markdown("##### Total de vendas por Método de Pagamento e Variação:")
-
+    # 5. Total por Pagamento
+    st.markdown("##### Total de vendas por Método de Pagamento:")
     df_payment_concat = pd.concat([relatorio['total_por_payment'].round(2), relatorio['variacao_payment'].round(2).rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})], axis=1)
-
     st.dataframe(style_dataframe(df_payment_concat), use_container_width=True)
+    with st.expander("📊 Gráfico: Vendas por Pagamento"):
+        st.plotly_chart(plot_total_and_variation(relatorio['total_por_payment'], relatorio['variacao_payment'], 'Payment', "Métricas por Pagamento"), use_container_width=True)
 
-    with st.expander("Gráfico de Vendas e Quantidades por Método de Pagamento"):
-
-        st.plotly_chart(plot_total_and_variation(relatorio['total_por_payment'].round(2), relatorio['variacao_payment'].round(2), 'Payment', "Métricas por Método de Pagamento"), use_container_width=True)
-
-
-
-    st.markdown("##### Distribuição de Clientes por Cidade e Tipo:")
-
+    # 6. Distribuição (Crosstabs)
+    st.markdown("##### Distribuição: Clientes por Cidade e Tipo:")
     st.dataframe(pd.concat([relatorio["crosstab_cidade_tipo_cliente"], relatorio["variacao_cidade_tipo_cliente"].add_suffix(" (Var)")], axis=1).fillna(0).astype(int), use_container_width=True)
-
-    with st.expander("Gráfico de Distribuição de Clientes por Cidade e Tipo"):
-
+    with st.expander("📊 Gráfico: Distribuição Cruzada"):
         df_plot = relatorio["crosstab_cidade_tipo_cliente"].reset_index().melt(id_vars="City")
-
-        st.plotly_chart(px.bar(df_plot, x="City", y="value", color="Customer type", barmode="group", title="Distribuição de Clientes por Cidade e Tipo", labels={'value': 'Número de Clientes'}), use_container_width=True)
-
+        st.plotly_chart(px.bar(df_plot, x="City", y="value", color="Customer type", barmode="group", title="Distribuição de Clientes", labels={'value': 'Clientes'}), use_container_width=True)
     
+    # --- NOVOS RELATÓRIOS COLUNA 2 ---
+    st.markdown("---")
+    st.markdown("#### ⏳ Análise Temporal e Eficiência")
 
-    st.markdown("##### Distribuição de Clientes por Cidade, Gênero e Tipo:")
+    # B. Horário de Pico
+    st.markdown("##### ⏰ Análise Temporal (Vendas por Hora)")
+    df_hora = pd.concat([relatorio['vendas_por_hora'], relatorio['var_vendas_por_hora'].rename(columns={'Total': 'Var. Total'})], axis=1)
+    st.dataframe(style_generic(df_hora, "Total", "R${:.2f}"), use_container_width=True)
+    with st.expander("📊 Gráfico: Horários de Pico"):
+        # Usamos um gráfico de linha ou área para tempo, mas barras funcionam bem aqui também
+        fig_hora = plot_generic(relatorio['vendas_por_hora'], relatorio['var_vendas_por_hora'], 'Hora', 'Total', "Vendas Totais por Hora do Dia", color_main='#00CC99', color_var='#009973')
+        fig_hora.update_xaxes(dtick=1) # Mostrar todas as horas
+        st.plotly_chart(fig_hora, use_container_width=True)
 
-    st.dataframe(pd.concat([relatorio["crosstab_cidade_genero"], relatorio["variacao_cidade_genero"].add_suffix(" (Var)")], axis=1).fillna(0).astype(int), use_container_width=True)
-
-    with st.expander("Gráfico de Distribuição de Clientes por Cidade, Gênero e Tipo"):
-
-        df_plot = relatorio['crosstab_cidade_genero'].stack(level=0).reset_index().rename(columns={0: 'count'})
-
-        st.plotly_chart(px.bar(df_plot, x='City', y='count', color='Customer type', facet_col='Gender', barmode='group', title='Distribuição de Clientes por Cidade, Gênero e Tipo', labels={'count': 'Número de Clientes'}), use_container_width=True)
-
-
-
-    st.markdown("##### Distribuição de Clientes por Cidade, Pagamento e Gênero:")
-
-    st.dataframe(pd.concat([relatorio["crosstab_cidade_payment"], relatorio["variacao_cidade_payment"].add_suffix(" (Var)")], axis=1).fillna(0).astype(int), use_container_width=True)
-
-    with st.expander("Distribuição de Clientes por Cidade, Pagamento e Gênero"):
-
-        df_plot = relatorio['crosstab_cidade_payment'].stack(level=0).reset_index().rename(columns={0: 'count'})
-
-        fig = px.bar(df_plot, x='City', y='count', color='Gender', facet_col='Payment', barmode='group', title='Distribuição de Clientes por Cidade, Gênero e Forma de Pagamento', labels={'count': 'Número de Clientes'}, template='plotly_dark')
-
-        fig.update_xaxes(tickangle=45)
-
-        fig.update_layout(height=445)
-
-        st.plotly_chart(fig, use_container_width=True)
+    # D. Eficiência Pagamento (Rating)
+    st.markdown("##### 💳 Eficiência de Pagamento (Rating por Método)")
+    df_rating_pay = pd.concat([relatorio['rating_pagamento'], relatorio['var_rating_pagamento'].rename(columns={'Média Rating': 'Var. Média Rating'})], axis=1)
+    st.dataframe(style_generic(df_rating_pay, "Média Rating", "{:.1f}"), use_container_width=True)
+    with st.expander("📊 Gráfico: Rating por Pagamento"):
+        st.plotly_chart(plot_generic(relatorio['rating_pagamento'], relatorio['var_rating_pagamento'], 'Payment', 'Média Rating', "Satisfação por Forma de Pagamento", color_main='#FF3366', color_var='#CC0033'), use_container_width=True)
