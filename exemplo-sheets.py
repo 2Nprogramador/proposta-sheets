@@ -8,7 +8,7 @@ import random
 
 # --- CONFIGURAÇÃO DA PLANILHA ---
 # Substitua o link abaixo se mudar a planilha
-PLANILHA_URL = st.secrets["planilhaurl"]
+PLANILHA_URL = st.secrets["url"]
 
 # --- FUNÇÕES DE INTERAÇÃO COM GOOGLE SHEETS E GERAÇÃO DE DADOS ---
 
