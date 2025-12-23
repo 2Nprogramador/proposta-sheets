@@ -1005,44 +1005,47 @@ with col2:
             st.plotly_chart(fig_ticket, use_container_width=True)
 
 # === NOVO INSIGHT 3: Qualidade vs Faturamento (Adicionado ao final da Coluna 1 ou 2, escolhi 1 para balancear) ===
-with col1: # Ou with col2
+with col1: # Você pode alterar para with col2 se quiser mudar de lado
     if insights:
         st.markdown("---")
         st.markdown("##### ⭐ Qualidade vs. Faturamento (Matriz)")
         
-        # 1. PEGAR O DATAFRAME DO DICIONÁRIO (CORREÇÃO AQUI)
-        # O dataframe está dentro de insights, na chave 'rating_faturamento'
+        # 1. Extração Segura: Pega os dados do dicionário 'insights'
+        # Como 'insights' foi gerado usando 'df_dia_raw' (que contém apenas o dia filtrado),
+        # este dataframe contém matematicamente apenas os dados do dia selecionado.
         df_rating = insights['rating_faturamento'].copy()
         
-        # 2. DEFINIR ÍNDICE E SELECIONAR COLUNAS
-        # Define 'Product line' como índice para ficar fixo à esquerda
+        # 2. Limpeza Visual: Define o índice e filtra colunas
+        # Define o nome do produto como índice para a tabela não mostrar números (0, 1, 2...) na esquerda
         df_rating = df_rating.set_index('Product line')
         
-        # Garante que mostraremos APENAS o Rating e o Faturamento (remove colunas extras se houver)
+        # Seleciona ESTRITAMENTE as colunas de Rating e Faturamento
         df_rating = df_rating[['Rating_Medio', 'Faturamento']]
         
-        # 3. EXIBIR COM FORMATAÇÃO
+        # 3. Exibição da Tabela: Formatação de Moeda e Casas Decimais
         st.dataframe(
             df_rating.style.format({
-                'Rating_Medio': '{:.2f}',       # Ex: 4.50
-                'Faturamento': 'R$ {:,.2f}'     # Ex: R$ 1,500.00
+                'Rating_Medio': '{:.2f}',       # Ex: 4.51
+                'Faturamento': 'R$ {:,.2f}'     # Ex: R$ 1,500.00 (com separador de milhar)
             }), 
             use_container_width=True
         )
         
-        # 4. GRÁFICO DE DISPERSÃO (Bolhas)
+        # 4. Gráfico de Dispersão (Bolhas)
         with st.expander("Ver Matriz de Qualidade"):
             fig_qualidade = px.scatter(
-                insights['rating_faturamento'], # Aqui também usamos o dicionário original
+                insights['rating_faturamento'], # Usa o dataframe original para o gráfico (precisa da coluna Product line normal)
                 x='Faturamento', 
                 y='Rating_Medio',
                 size='Faturamento', 
                 color='Product line',
-                title="Produtos: Avaliação vs. Receita",
+                # Adicionei a data no título para confirmar visualmente que é o dia certo
+                title=f"Produtos: Avaliação vs. Receita ({dia_selecionado})",
                 hover_name='Product line'
             )
             
-            # Adiciona linha de média geral
+            # Adiciona linha de média geral do dia para comparação
+            # Usa 'df_dia_raw' que é a variável que contém todos os dados brutos DO DIA
             if 'df_dia_raw' in locals() and not df_dia_raw.empty:
                  media_geral_rating = df_dia_raw['Rating'].mean()
                  fig_qualidade.add_hline(y=media_geral_rating, line_dash="dot", annotation_text="Média Geral")
