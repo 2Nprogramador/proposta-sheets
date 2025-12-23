@@ -320,6 +320,8 @@ def gerar_dados_proximo_dia(df_atual):
 
     return pd.DataFrame(novas_linhas)
 
+
+
 # --- CONFIGURAÇÃO DA PÁGINA ---
 
 
