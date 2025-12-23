@@ -1010,9 +1010,9 @@ with col1: # Ou with col2
         st.markdown("---")
         st.markdown("##### ⭐ Qualidade vs. Faturamento (Matriz)")
         
-        # 1. PEGAR O DATAFRAME DO DICIONÁRIO (Isso evita o NameError)
-        # A função retornou um dicionário, então extraímos a chave 'rating_faturamento'
-        df_rating = rating_faturamento.copy()
+        # 1. PEGAR O DATAFRAME DO DICIONÁRIO (CORREÇÃO AQUI)
+        # O dataframe está dentro de insights, na chave 'rating_faturamento'
+        df_rating = insights['rating_faturamento'].copy()
         
         # 2. DEFINIR ÍNDICE E SELECIONAR COLUNAS
         # Define 'Product line' como índice para ficar fixo à esquerda
@@ -1033,7 +1033,7 @@ with col1: # Ou with col2
         # 4. GRÁFICO DE DISPERSÃO (Bolhas)
         with st.expander("Ver Matriz de Qualidade"):
             fig_qualidade = px.scatter(
-                insights['rating_faturamento'], # Usa o dataframe original com a coluna 'Product line'
+                insights['rating_faturamento'], # Aqui também usamos o dicionário original
                 x='Faturamento', 
                 y='Rating_Medio',
                 size='Faturamento', 
@@ -1043,7 +1043,6 @@ with col1: # Ou with col2
             )
             
             # Adiciona linha de média geral
-            # (Note: df_dia_raw deve estar disponível no escopo, vindo do filtro de data)
             if 'df_dia_raw' in locals() and not df_dia_raw.empty:
                  media_geral_rating = df_dia_raw['Rating'].mean()
                  fig_qualidade.add_hline(y=media_geral_rating, line_dash="dot", annotation_text="Média Geral")
