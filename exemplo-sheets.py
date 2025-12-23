@@ -24,10 +24,32 @@ import random
 
 @st.cache_data(ttl=600)
 
+Com a garantia de que a planilha agora está padronizada (ponto para milhar, vírgula para centavos), o código Python fica muito mais simples e seguro.
+
+Não precisamos mais tentar "adivinhar" o formato ou fazer verificações complexas. Podemos usar uma função direta de conversão BR -> float.
+
+Aqui está o código completo, refeito e otimizado para essa nova realidade:
+
+Python
+
+import pandas as pd
+import streamlit as st
+import plotly.express as px
+import plotly
+import gspread
+from gspread.exceptions import WorksheetNotFound, APIError
+import datetime
+import numpy as np
+import random
+
+# --- FUNÇÕES DE INTERAÇÃO COM GOOGLE SHEETS E GERAÇÃO DE DADOS ---
+
+@st.cache_data(ttl=600)
 def load_data_from_gsheets():
     """
-    Carrega os dados da Google Sheet evitando a multiplicação por 100
-    ao verificar se o dado já é numérico antes de limpar.
+    Carrega os dados da Google Sheet assumindo ESTRITAMENTE o formato brasileiro:
+    - Ponto (.) = Separador de Milhar (deve ser removido)
+    - Vírgula (,) = Separador Decimal (deve virar ponto)
     """
     try:
         creds_dict = st.secrets["gcp_service_account"]
@@ -41,24 +63,27 @@ def load_data_from_gsheets():
         data = worksheet.get_all_records()
         df_sheet = pd.DataFrame.from_records(data)
 
+        # Remove linhas vazias
         df_sheet.dropna(how='all', inplace=True)
         
-        # --- FUNÇÃO INTELIGENTE DE CONVERSÃO ---
-        def corrigir_valor_brasileiro(valor):
-            # 1. Se já for número (float ou int), retorna ele mesmo
-            # Isso evita que 1410.36 vire 141036
+        # --- FUNÇÃO DE CONVERSÃO BRASILEIRA (SEGURA) ---
+        def converter_br_para_float(valor):
+            if valor is None or str(valor).strip() == "":
+                return 0.0
+            
+            # Se já vier como número do Google Sheets (float/int), mantém
             if isinstance(valor, (int, float)):
                 return float(valor)
             
-            # 2. Se for texto, faz a limpeza
             valor_str = str(valor).strip()
-            if not valor_str: return 0.0
             
+            # Remove "R$" e espaços
             valor_str = valor_str.replace('R$', '').strip()
             
-            # Remove ponto de milhar (1.000 -> 1000)
+            # 1. Remove Ponto de Milhar (1.200 -> 1200)
             valor_str = valor_str.replace('.', '')
-            # Troca vírgula decimal por ponto (50,20 -> 50.20)
+            
+            # 2. Troca Vírgula por Ponto Decimal (50,20 -> 50.20)
             valor_str = valor_str.replace(',', '.')
             
             try:
@@ -66,7 +91,7 @@ def load_data_from_gsheets():
             except ValueError:
                 return 0.0
 
-        # --- APLICAÇÃO SEGURA ---
+        # --- APLICAÇÃO ---
         
         # 1. Data
         try:
@@ -74,22 +99,22 @@ def load_data_from_gsheets():
         except:
             df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
 
-        # 2. Total e Unit Price (Usa a função segura)
+        # 2. Total e Unit Price
         if 'Total' in df_sheet.columns:
-            df_sheet['Total'] = df_sheet['Total'].apply(corrigir_valor_brasileiro)
+            df_sheet['Total'] = df_sheet['Total'].apply(converter_br_para_float)
             
         if 'Unit price' in df_sheet.columns:
-             df_sheet['Unit price'] = df_sheet['Unit price'].apply(corrigir_valor_brasileiro)
+             df_sheet['Unit price'] = df_sheet['Unit price'].apply(converter_br_para_float)
 
-        # 3. Quantity
+        # 3. Quantity (Converte BR -> Float -> Int)
         if 'Quantity' in df_sheet.columns:
-             df_sheet['Quantity'] = df_sheet['Quantity'].apply(corrigir_valor_brasileiro).astype('Int64')
+             df_sheet['Quantity'] = df_sheet['Quantity'].apply(converter_br_para_float).astype('Int64')
 
-        # 4. Rating
+        # 4. Rating (Converte BR -> Float)
         if 'Rating' in df_sheet.columns:
-            df_sheet['Rating'] = df_sheet['Rating'].apply(corrigir_valor_brasileiro)
+            df_sheet['Rating'] = df_sheet['Rating'].apply(converter_br_para_float)
 
-        # Limpeza final
+        # Limpeza final de dados inválidos
         df_sheet.dropna(subset=['Data', 'Total', 'Quantity'], inplace=True)
         df_sheet = df_sheet[df_sheet['Total'] > 0]
         
@@ -107,19 +132,16 @@ def processar_insights_criativos(df_dia):
     if df_dia.empty:
         return None
 
-    # 1. Tratamento de Hora (Extrair apenas a hora inteira)
-    # Tenta converter string '13:08' para datetime e pegar a hora 13
+    # 1. Tratamento de Hora
     try:
         df_dia['Hora_Int'] = pd.to_datetime(df_dia['Time'], format='%H:%M').dt.hour
     except:
-        # Fallback se der erro
         df_dia['Hora_Int'] = 0
         
     # --- INSIGHT 1: Vendas por Hora ---
     vendas_por_hora = df_dia.groupby('Hora_Int')[['Total', 'Quantity']].sum().reset_index()
     
-    # --- INSIGHT 2: Ticket Médio por Tipo de Cliente ---
-    # Ticket Médio = Soma Total / Contagem de Linhas (Transações)
+    # --- INSIGHT 2: Ticket Médio ---
     ticket_medio_tipo = df_dia.groupby('Customer type').agg(
         Faturamento=('Total', 'sum'),
         Transacoes=('Invoice ID', 'count')
@@ -127,7 +149,7 @@ def processar_insights_criativos(df_dia):
     ticket_medio_tipo['Ticket_Medio'] = ticket_medio_tipo['Faturamento'] / ticket_medio_tipo['Transacoes']
     ticket_medio_tipo = ticket_medio_tipo.reset_index()
 
-    # --- INSIGHT 3: Rating vs Faturamento (Por Linha de Produto) ---
+    # --- INSIGHT 3: Rating vs Faturamento (Matriz) ---
     rating_faturamento = df_dia.groupby('Product line').agg(
         Rating_Medio=('Rating', 'mean'),
         Faturamento=('Total', 'sum')
@@ -138,7 +160,6 @@ def processar_insights_criativos(df_dia):
         "ticket_medio_tipo": ticket_medio_tipo,
         "rating_faturamento": rating_faturamento
     }
-
 
 def salvar_dados_gsheets(df_novos_dados):
 
