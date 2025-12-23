@@ -25,73 +25,100 @@ import random
 @st.cache_data(ttl=600)
 
 def load_data_from_gsheets():
+
     """
-    Carrega os dados e replica o tratamento de texto/número do script GAS.
+
+    Carrega os dados da Google Sheet usando as credenciais da Service Account.
+
     """
+
+    # st.info("Carregando dados...") # Opcional: manter comentado para não poluir visualmente
+
     try:
+
         creds_dict = st.secrets["gcp_service_account"]
+
         gsheets_url = st.secrets["gsheets"]["url"]
+
         worksheet_name = st.secrets["gsheets"]["worksheet_name"]
 
+
+
         gc = gspread.service_account_from_dict(creds_dict)
+
         sh = gc.open_by_url(gsheets_url)
+
         worksheet = sh.worksheet(worksheet_name)
 
+
+
         data = worksheet.get_all_records()
+
         df_sheet = pd.DataFrame.from_records(data)
 
+
+
         df_sheet.dropna(how='all', inplace=True)
+
         
-        # Tratamento de Data
+
         try:
+
             df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], errors='coerce')
+
         except Exception:
+
              df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+
             
+
         df_sheet['Total'] = pd.to_numeric(df_sheet['Total'], errors='coerce')
+
         df_sheet['Quantity'] = pd.to_numeric(df_sheet['Quantity'], errors='coerce').astype('Int64')
 
-        # --- CORREÇÃO PARA IGUALAR AO SCRIPT N8N (Rating) ---
-        if 'Rating' in df_sheet.columns:
-            # 1. Converte tudo para texto (simulando displayValues)
-            # 2. Troca vírgula por ponto
-            # 3. Converte para número (coercing errors vira NaN, que o mean ignora igual seu script ignora isNaN)
-            df_sheet['Rating'] = df_sheet['Rating'].astype(str).str.replace(',', '.')
-            df_sheet['Rating'] = pd.to_numeric(df_sheet['Rating'], errors='coerce')
+
 
         df_sheet.dropna(subset=['Data', 'Total', 'Quantity'], inplace=True)
+
         df_sheet = df_sheet[df_sheet['Total'] > 0]
+
         df_sheet.dropna(subset=['Data'], inplace=True)
+
         
+
         return df_sheet
 
+
+
     except Exception as e:
+
         st.error(f"Erro ao carregar dados: {e}")
+
         st.stop()
+
         return pd.DataFrame()
 
 
 def processar_insights_criativos(df_dia):
     """
     Gera dataframes específicos para os novos insights baseados no dia selecionado.
-    Replica a lógica de agregação do script Google Apps Script/n8n.
     """
     if df_dia.empty:
         return None
 
-    # 1. Tratamento de Hora (Extrair apenas a hora inteira para o insight de Golden Hours)
+    # 1. Tratamento de Hora (Extrair apenas a hora inteira)
+    # Tenta converter string '13:08' para datetime e pegar a hora 13
     try:
-        # Tenta converter a string 'HH:MM' para datetime e extrair a hora
         df_dia['Hora_Int'] = pd.to_datetime(df_dia['Time'], format='%H:%M').dt.hour
     except:
-        # Se falhar, define como 0 para não quebrar o código
+        # Fallback se der erro
         df_dia['Hora_Int'] = 0
         
-    # --- INSIGHT 1: Vendas por Hora (Golden Hours) ---
+    # --- INSIGHT 1: Vendas por Hora ---
     vendas_por_hora = df_dia.groupby('Hora_Int')[['Total', 'Quantity']].sum().reset_index()
     
     # --- INSIGHT 2: Ticket Médio por Tipo de Cliente ---
-    # Lógica: Soma tudo o que cada tipo gastou e divide pelo número de compras
+    # Ticket Médio = Soma Total / Contagem de Linhas (Transações)
     ticket_medio_tipo = df_dia.groupby('Customer type').agg(
         Faturamento=('Total', 'sum'),
         Transacoes=('Invoice ID', 'count')
@@ -99,13 +126,9 @@ def processar_insights_criativos(df_dia):
     ticket_medio_tipo['Ticket_Medio'] = ticket_medio_tipo['Faturamento'] / ticket_medio_tipo['Transacoes']
     ticket_medio_tipo = ticket_medio_tipo.reset_index()
 
-    # --- INSIGHT 3: Rating vs Faturamento (Matriz de Qualidade) ---
-    # LÓGICA IDÊNTICA AO N8N:
-    # 1. Agrupa por 'Product line'
-    # 2. Rating: Calcula a MÉDIA (mean) dos valores (já tratados como float no load_data)
-    # 3. Faturamento: Calcula a SOMA (sum) da coluna Total
+    # --- INSIGHT 3: Rating vs Faturamento (Por Linha de Produto) ---
     rating_faturamento = df_dia.groupby('Product line').agg(
-        Rating_Medio=('Rating', 'mean'), 
+        Rating_Medio=('Rating', 'mean'),
         Faturamento=('Total', 'sum')
     ).reset_index()
 
@@ -114,6 +137,7 @@ def processar_insights_criativos(df_dia):
         "ticket_medio_tipo": ticket_medio_tipo,
         "rating_faturamento": rating_faturamento
     }
+
 
 def salvar_dados_gsheets(df_novos_dados):
 
@@ -536,9 +560,9 @@ if "request_type" in st.query_params:
         # 1. Prepara dados para os Relatórios Padrão
         relatorio_api = relatorio_por_dia_com_variacoes(pd.to_datetime(target_date), df)
         
-        # 2. Prepara dados para os Novos Insights (Necessita filtrar o DF bruto para O DIA APENAS)
+        # 2. Prepara dados para os Novos Insights (Necessita filtrar o DF bruto)
         target_dt = pd.to_datetime(target_date).date()
-        df_api_raw = df[df['Data'].dt.date == target_dt] # AQUI GARANTE QUE É SÓ O DIA
+        df_api_raw = df[df['Data'].dt.date == target_dt]
         insights_api = processar_insights_criativos(df_api_raw)
 
         if not relatorio_api and not insights_api:
@@ -550,6 +574,7 @@ if "request_type" in st.query_params:
         
         if report_name in novos_endpoints:
             if insights_api and report_name in insights_api:
+                # Retorna o dataframe do insight direto como JSON
                 df_insight = insights_api[report_name]
                 st.json(df_insight.to_dict(orient="records"))
                 st.stop()
@@ -557,28 +582,34 @@ if "request_type" in st.query_params:
                 st.json({"erro": f"Insight '{report_name}' não disponível para esta data."})
                 st.stop()
 
-        # --- LÓGICA ANTIGA: Relatórios Padrão ---
+        # --- LÓGICA ANTIGA: Relatórios Padrão (Mantida) ---
         mapping = {
+            # Relatórios de Soma (Vendas e Quantidade)
             "total_por_cidade": ("total_por_cidade", "variacao_cidade", "sum"),
             "total_por_linha_produto": ("total_por_linha_produto", "variacao_linha_produto", "sum"),
             "total_por_tipo_cliente": ("total_por_tipo_cliente", "variacao_tipo_cliente", "sum"),
             "total_por_payment": ("total_por_payment", "variacao_payment", "sum"),
             "total_por_genero": ("total_por_genero", "variacao_genero", "sum"),
+            
+            # Relatórios de Distribuição (Crosstabs)
             "distribuicao_cidade_tipo": ("crosstab_cidade_tipo_cliente", "variacao_cidade_tipo_cliente", "cross"),
             "distribuicao_cidade_genero_tipo": ("crosstab_cidade_genero", "variacao_cidade_genero", "cross")
         }
 
         if report_name in mapping:
             key_data, key_var, report_type = mapping[report_name]
+            
             df_main = relatorio_api[key_data]
             df_var = relatorio_api[key_var]
 
             if report_type == "sum":
+                # Lógica para Total e Quantidade
                 df_final = pd.concat([
                     df_main, 
                     df_var.rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})
                 ], axis=1)
             else:
+                # Lógica para Distribuições (Crosstabs)
                 df_final = pd.concat([
                     df_main, 
                     df_var.add_suffix(" (Var)")
@@ -652,7 +683,7 @@ st.sidebar.markdown("---")
 
 
 
-st.title("Relatório Diário de Vendas Completo com Alertas no Whatsapp")
+st.title("Relatório Diário de Vendas Completo com Variações")
 
 
 
@@ -814,29 +845,13 @@ with st.expander("Alertas Importantes", expanded=True if total_alertas > 0 else 
 
 st.subheader(f"Relatório Detalhado de Vendas para o dia {dia_selecionado}")
 
-# ==============================================================================
-# 1. CÁLCULO PRÉVIO DOS INSIGHTS (CORRIGIDO PARA FILTRAR APENAS O DIA)
-# ==============================================================================
-
-# Garante que 'dia_selecionado' seja comparável com a coluna Data (converte tudo para date)
-if isinstance(dia_selecionado, (pd.Timestamp, datetime.datetime, np.datetime64)):
-    data_filtro = dia_selecionado.date()
-else:
-    data_filtro = dia_selecionado
-
-# 2. CRIA O DATAFRAME BLINDADO
-# Aqui comparamos apenas a PARTE DA DATA (dt.date) da coluna 'Data' com o seu filtro.
-# O .copy() garante que mexer nisso não afeta o resto.
-# Criei este filtro explícito antes de chamar as funções de cálculo
-df_dia_raw = df[df['Data'].dt.date == data_filtro].copy()
-
-# Agora a função calcula os dados usando APENAS esse pedaço filtrado
+# 1. CÁLCULO PRÉVIO DOS INSIGHTS (Para estarem disponíveis nas colunas)
+df_dia_raw = df[df['Data'].dt.date == dia_selecionado]
 insights = processar_insights_criativos(df_dia_raw)
-
-# ==============================================================================
 
 col1, col2 = st.columns(2)
 
+# Função de estilo existente (mantida para os dados padrões)
 def style_dataframe(df_input):
     is_first_day = (dia_selecionado == primeiro_dia_disponivel)
     format_dict = {"Total": "R${:.2f}", "Quantity": "{:.0f}"}
@@ -849,6 +864,7 @@ def style_dataframe(df_input):
     format_dict.update(var_format_dict)
     return df_input.style.format(format_dict, na_rep="-")
 
+# Função de plotagem existente
 def plot_total_and_variation(df_total, df_var, id_col, title):
     df_var_renamed = df_var.rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})
     df_concat = pd.concat([df_total.round(2), df_var_renamed.round(2)], axis=1).reset_index()
@@ -988,39 +1004,20 @@ with col1:
     if insights:
         st.markdown("---")
         st.markdown("##### ⭐ Qualidade vs. Faturamento (Matriz)")
-        
-        # 1. Extração direta da chave calculada
-        df_rating = insights['rating_faturamento'].copy()
-        
-        # 2. Configuração Visual
-        df_rating = df_rating.set_index('Product line')
-        df_rating = df_rating[['Rating_Medio', 'Faturamento']] # Ordem exata
-        
-        # 3. Exibição
-        st.dataframe(
-            df_rating.style.format({
-                'Rating_Medio': '{:.2f}', 
-                'Faturamento': 'R$ {:,.2f}'
-            }), 
-            use_container_width=True
-        )
-        
-        # 4. Gráfico
+        # Tabela Formatada
+        df_rating = insights['rating_faturamento'].set_index('Product line')
+        st.dataframe(df_rating.style.format({'Rating_Medio': '{:.2f}', 'Faturamento': 'R${:.2f}'}), use_container_width=True)
+        # Expander com Gráfico
         with st.expander("Ver Matriz de Qualidade"):
             fig_qualidade = px.scatter(
-                insights['rating_faturamento'], 
-                x='Faturamento', 
+                insights['rating_faturamento'],
+                x='Faturamento',
                 y='Rating_Medio',
                 size='Faturamento', 
                 color='Product line',
-                # Título com data para confirmar visualmente o filtro
-                title=f"Produtos ({dia_selecionado})",
+                title="Produtos: Avaliação vs. Receita",
                 hover_name='Product line'
             )
-            
-            # Adiciona linha de média geral (usando df_dia_raw que foi filtrado lá em cima)
-            if 'df_dia_raw' in locals() and not df_dia_raw.empty:
-                 media_geral_rating = df_dia_raw['Rating'].mean()
-                 fig_qualidade.add_hline(y=media_geral_rating, line_dash="dot", annotation_text="Média Geral")
-            
+            media_geral_rating = df_dia_raw['Rating'].mean()
+            fig_qualidade.add_hline(y=media_geral_rating, line_dash="dot", annotation_text="Média Geral")
             st.plotly_chart(fig_qualidade, use_container_width=True)
