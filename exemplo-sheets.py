@@ -100,226 +100,94 @@ def load_data_from_gsheets():
 
 
 
-def salvar_dados_gsheets(df_novos_dados):
-
-    """
-
-    Recebe um DataFrame com novos dados e adiciona (append) na planilha do Google Sheets.
-
-    """
-
-    try:
-
-        creds_dict = st.secrets["gcp_service_account"]
-
-        gsheets_url = st.secrets["gsheets"]["url"]
-
-        worksheet_name = st.secrets["gsheets"]["worksheet_name"]
-
-
-
-        gc = gspread.service_account_from_dict(creds_dict)
-
-        sh = gc.open_by_url(gsheets_url)
-
-        worksheet = sh.worksheet(worksheet_name)
-
-
-
-        # Converte as datas para string antes de enviar, pois JSON não aceita datetime
-
-        df_export = df_novos_dados.copy()
-
-        df_export['Data'] = df_export['Data'].dt.strftime('%Y-%m-%d')
-
-        
-
-        # Converte para lista de listas (formato do gspread)
-
-        # O Google Sheets espera tipos nativos do Python (int, float), não numpy types
-
-        dados_lista = df_export.astype(object).values.tolist()
-
-        
-
-        worksheet.append_rows(dados_lista)
-
-        return True
-
-    except Exception as e:
-
-        st.error(f"Erro ao salvar dados no Google Sheets: {e}")
-
-        return False
-
-
-
 def gerar_dados_proximo_dia(df_atual):
-
     """
-
-    Gera transações fictícias baseadas nas regras do usuário para o dia seguinte ao último registro.
-
+    Gera transações fictícias para o dia seguinte.
+    Formato numérico: 1000.00 (ponto para decimal, 2 casas fixas).
     """
 
     if df_atual.empty:
-
         ultimo_dia = datetime.date.today()
-
     else:
-
-        ultimo_dia = df_atual['Data'].max().date()
-
+        # Garante que estamos pegando a data corretamente
+        ultimo_dia = pd.to_datetime(df_atual['Data']).max().date()
     
-
     proximo_dia = ultimo_dia + datetime.timedelta(days=1)
-
     
-
-    # Define a quantidade de vendas para o dia (entre 20 e 50 para variar)
-
+    # Define a quantidade de vendas
     qtd_transacoes = random.randint(100, 300)
-
     
-
     novas_linhas = []
-
     
-
-    # Listas de possibilidades baseadas nas regras
-
+    # Listas de possibilidades
     cidades = ['Rio de Janeiro', 'São Paulo', 'Manaus']
-
     tipos_cliente = ['Normal', 'Membro']
-
     generos = ['Homem', 'Mulher']
-
     linhas_produto = [
-
         'Saude e Beleza', 'Acessorios Eletronicos', 'Casa e Estilo de Vida',
-
         'Esportes e Viagens', 'Moda'
-
     ]
-
     pagamentos = ['Pix', 'Cartao de Credito', 'Debito']
-
     
-
     for _ in range(qtd_transacoes):
-
-        # 1. Invoice ID: XXX-XX-XXXX
-
+        # 1. Invoice ID
         invoice_id = f"{random.randint(100, 999)}-{random.randint(10, 99)}-{random.randint(1000, 9999)}"
-
         
-
         # 2. City
-
         city = random.choice(cidades)
-
         
-
         # 3. Customer type
-
         customer_type = random.choice(tipos_cliente)
-
         
-
         # 4. Gender
-
         gender = random.choice(generos)
-
         
-
         # 5. Product line
-
         product_line = random.choice(linhas_produto)
-
         
-
-        # 6. Unit price: 10.00 a 130.00
-
-        unit_price = round(random.uniform(10.00, 130.00), 2)
-
+        # 6. Unit price (Calcula e formata com ponto e 2 casas)
+        unit_price_float = random.uniform(10.00, 130.00)
+        unit_price_str = f"{unit_price_float:.2f}"
         
-
-        # 7. Quantity: 1 a 15
-
+        # 7. Quantity
         quantity = random.randint(1, 15)
-
         
-
-        # 8. Total
-
-        total = round(unit_price * quantity, 2)
-
+        # 8. Total (Calcula e formata com ponto e 2 casas)
+        total_float = unit_price_float * quantity
+        total_str = f"{total_float:.2f}"
         
-
-        # 9. Time: 07:00 a 23:00
-
+        # 9. Time
         hora = random.randint(7, 23)
-
         minuto = random.randint(0, 59)
-
         time_str = f"{hora:02d}:{minuto:02d}"
-
         
-
         # 10. Payment
-
         payment = random.choice(pagamentos)
-
         
-
-        # 11. Rating: 3.0 a 10.0
-
+        # 11. Rating
         rating = round(random.uniform(3.0, 10.0), 1)
-
         
-
         # 12. Data
-
         data_registro = pd.to_datetime(proximo_dia)
-
         
-
         # Adiciona ao dicionário
-
         linha = {
-
             "Invoice ID": invoice_id,
-
             "City": city,
-
             "Customer type": customer_type,
-
             "Gender": gender,
-
             "Product line": product_line,
-
-            "Unit price": unit_price,
-
+            "Unit price": unit_price_str, # Ex: "54.50"
             "Quantity": int(quantity),
-
-            "Total": total,
-
+            "Total": total_str,           # Ex: "1090.00"
             "Time": time_str,
-
             "Payment": payment,
-
             "Rating": rating,
-
             "Data": data_registro
-
         }
-
         novas_linhas.append(linha)
-
         
-
     return pd.DataFrame(novas_linhas)
-
 
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
