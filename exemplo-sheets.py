@@ -783,14 +783,14 @@ with col1:
     
     
     # A. Ticket Médio
-    st.markdown("##### 💵 Ticket Médio por Cidade (Average Order Value)")
+    st.markdown("##### 💵 Ticket Médio por Cidade")
     df_ticket = pd.concat([relatorio['ticket_medio_cidade'], relatorio['var_ticket_medio_cidade'].rename(columns={'Ticket Médio': 'Var. Ticket Médio'})], axis=1)
     st.dataframe(style_generic(df_ticket, "Ticket Médio", "R${:.2f}"), use_container_width=True)
     with st.expander("📊 Gráfico: Ticket Médio por Cidade"):
         st.plotly_chart(plot_generic(relatorio['ticket_medio_cidade'], relatorio['var_ticket_medio_cidade'], 'City', 'Ticket Médio', "Ticket Médio por Cidade", color_main='#FF9900', color_var='#CC7A00'), use_container_width=True)
 
     # C. Qualidade (Rating por Produto)
-    st.markdown("##### ⭐ Qualidade e Satisfação (Rating por Produto)")
+    st.markdown("##### ⭐ Qualidade e Satisfação")
     df_rating_prod = pd.concat([relatorio['rating_produto'], relatorio['var_rating_produto'].rename(columns={'Média Rating': 'Var. Média Rating'})], axis=1)
     st.dataframe(style_generic(df_rating_prod, "Média Rating", "{:.1f}"), use_container_width=True)
     with st.expander("📊 Gráfico: Rating por Produto"):
@@ -824,7 +824,7 @@ with col2:
     st.markdown("#### ⏳ Análise Temporal e Eficiência")
 
     # B. Horário de Pico
-    st.markdown("##### ⏰ Análise Temporal (Vendas por Hora)")
+    st.markdown("##### ⏰ Análise Temporal por Hora)")
     df_hora = pd.concat([relatorio['vendas_por_hora'], relatorio['var_vendas_por_hora'].rename(columns={'Total': 'Var. Total'})], axis=1)
     st.dataframe(style_generic(df_hora, "Total", "R${:.2f}"), use_container_width=True)
     with st.expander("📊 Gráfico: Horários de Pico"):
