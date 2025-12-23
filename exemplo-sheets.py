@@ -1,31 +1,32 @@
 import pandas as pd
 import streamlit as st
 import plotly.express as px
-import plotly
 import gspread
-from gspread.exceptions import WorksheetNotFound, APIError
 import datetime
 import numpy as np
 import random
+
+# --- CONFIGURAÇÃO DA PLANILHA ---
+# Substitua o link abaixo se mudar a planilha
+PLANILHA_URL = st.secrets["planilhaurl"]
 
 # --- FUNÇÕES DE INTERAÇÃO COM GOOGLE SHEETS E GERAÇÃO DE DADOS ---
 
 @st.cache_data(ttl=600)
 def load_data_from_gsheets():
     """
-    Carrega os dados da Google Sheet assumindo ESTRITAMENTE o formato brasileiro
-    para as colunas monetárias (Total e Unit price):
-    - Ponto (.) = Separador de Milhar (deve ser removido)
-    - Vírgula (,) = Separador Decimal (deve virar ponto)
+    Carrega os dados da planilha específica, tratando formatos BR e US misturados.
     """
     try:
+        # Carrega credenciais do secrets
         creds_dict = st.secrets["gcp_service_account"]
-        gsheets_url = st.secrets["gsheets"]["url"]
-        worksheet_name = st.secrets["gsheets"]["worksheet_name"]
-
         gc = gspread.service_account_from_dict(creds_dict)
-        sh = gc.open_by_url(gsheets_url)
-        worksheet = sh.worksheet(worksheet_name)
+        
+        # Abre a planilha pelo URL fixo
+        sh = gc.open_by_url(PLANILHA_URL)
+        
+        # Pega a PRIMEIRA aba (índice 0), independente do nome
+        worksheet = sh.get_worksheet(0)
 
         data = worksheet.get_all_records()
         df_sheet = pd.DataFrame.from_records(data)
@@ -33,24 +34,19 @@ def load_data_from_gsheets():
         # Remove linhas vazias
         df_sheet.dropna(how='all', inplace=True)
         
-        # --- FUNÇÃO DE CONVERSÃO BRASILEIRA (SEGURA) ---
+        # --- FUNÇÃO DE CONVERSÃO BRASILEIRA (Para Total, Preço, Qtd) ---
         def converter_br_para_float(valor):
             if valor is None or str(valor).strip() == "":
                 return 0.0
-            
-            # Se já vier como número do Google Sheets (float/int), mantém
             if isinstance(valor, (int, float)):
                 return float(valor)
             
             valor_str = str(valor).strip()
-            
-            # Remove "R$" e espaços
             valor_str = valor_str.replace('R$', '').strip()
             
-            # 1. Remove Ponto de Milhar (Ex: 1.200 -> 1200)
+            # 1. Remove Ponto de Milhar (1.200 -> 1200)
             valor_str = valor_str.replace('.', '')
-            
-            # 2. Troca Vírgula por Ponto Decimal (Ex: 50,20 -> 50.20)
+            # 2. Troca Vírgula por Ponto Decimal (50,20 -> 50.20)
             valor_str = valor_str.replace(',', '.')
             
             try:
@@ -58,37 +54,31 @@ def load_data_from_gsheets():
             except ValueError:
                 return 0.0
 
-        # --- APLICAÇÃO ---
+        # --- APLICAÇÃO DOS TRATAMENTOS ---
         
-        # 1. Data
+        # 1. Data (Formato YYYY-MM-DD encontrado na planilha)
         try:
             df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], errors='coerce')
         except:
-            df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+            df_sheet['Data'] = pd.to_datetime(df_sheet['Data'], format='%Y-%m-%d', errors='coerce')
 
-        # 2. Total (Aplica conversão BR)
-        if 'Total' in df_sheet.columns:
-            df_sheet['Total'] = df_sheet['Total'].apply(converter_br_para_float)
-            
-        # 3. Unit Price (Aplica conversão BR - ATUALIZADO)
-        if 'Unit price' in df_sheet.columns:
-             df_sheet['Unit price'] = df_sheet['Unit price'].apply(converter_br_para_float)
-
-        # 4. Quantity (Converte BR -> Float -> Int)
+        # 2. Colunas Monetárias/Numéricas (Formato BR: 1.000,00)
+        cols_br = ['Total', 'Unit price', 'Quantity']
+        for col in cols_br:
+            if col in df_sheet.columns:
+                df_sheet[col] = df_sheet[col].apply(converter_br_para_float)
+        
+        # Garante que Quantity seja inteiro
         if 'Quantity' in df_sheet.columns:
-             df_sheet['Quantity'] = df_sheet['Quantity'].apply(converter_br_para_float).astype('Int64')
+            df_sheet['Quantity'] = df_sheet['Quantity'].astype('Int64')
 
-        # 5. Rating (Converte BR -> Float)
+        # 3. Rating (Formato US detectado: 9.1 - Ponto Decimal)
+        # NÃO usar o conversor BR aqui, senão 9.1 vira 91
         if 'Rating' in df_sheet.columns:
-            df_sheet['Rating'] = df_sheet['Rating'].apply(converter_br_para_float)
+            df_sheet['Rating'] = pd.to_numeric(df_sheet['Rating'], errors='coerce')
 
-        # Limpeza final de dados inválidos
-        # Agora verificamos também se Unit price está válido
-        cols_to_check = ['Data', 'Total', 'Quantity']
-        if 'Unit price' in df_sheet.columns:
-            cols_to_check.append('Unit price')
-            
-        df_sheet.dropna(subset=cols_to_check, inplace=True)
+        # Limpeza final
+        df_sheet.dropna(subset=['Data', 'Total', 'Quantity'], inplace=True)
         df_sheet = df_sheet[df_sheet['Total'] > 0]
         
         return df_sheet
@@ -136,24 +126,20 @@ def processar_insights_criativos(df_dia):
 
 def salvar_dados_gsheets(df_novos_dados):
     """
-    Recebe um DataFrame com novos dados e adiciona (append) na planilha do Google Sheets.
+    Salva novos dados na planilha.
     """
     try:
         creds_dict = st.secrets["gcp_service_account"]
-        gsheets_url = st.secrets["gsheets"]["url"]
-        worksheet_name = st.secrets["gsheets"]["worksheet_name"]
-
         gc = gspread.service_account_from_dict(creds_dict)
-        sh = gc.open_by_url(gsheets_url)
-        worksheet = sh.worksheet(worksheet_name)
+        sh = gc.open_by_url(PLANILHA_URL)
+        worksheet = sh.get_worksheet(0) # Usa a primeira aba
 
         # Converte datas para string
         df_export = df_novos_dados.copy()
         df_export['Data'] = df_export['Data'].dt.strftime('%Y-%m-%d')
         
-        # Converte para lista
+        # Converte para lista e envia
         dados_lista = df_export.astype(object).values.tolist()
-        
         worksheet.append_rows(dados_lista)
         return True
     except Exception as e:
@@ -162,7 +148,7 @@ def salvar_dados_gsheets(df_novos_dados):
 
 def gerar_dados_proximo_dia(df_atual):
     """
-    Gera transações fictícias.
+    Gera transações fictícias para simulação.
     """
     if df_atual.empty:
         ultimo_dia = datetime.date.today()
@@ -189,7 +175,7 @@ def gerar_dados_proximo_dia(df_atual):
         gender = random.choice(generos)
         product_line = random.choice(linhas_produto)
         
-        # Gera valores numéricos puros (Python usa ponto decimal internamente)
+        # Gera valores numéricos puros
         unit_price = round(random.uniform(10.00, 130.00), 2)
         quantity = random.randint(1, 15)
         total = round(unit_price * quantity, 2)
@@ -201,6 +187,8 @@ def gerar_dados_proximo_dia(df_atual):
         rating = round(random.uniform(3.0, 10.0), 1)
         data_registro = pd.to_datetime(proximo_dia)
         
+        # Nota: Ao salvar, o gspread/sheets pode formatar dependendo da configuração da célula.
+        # Aqui geramos floats Python padrão.
         linha = {
             "Invoice ID": invoice_id, "City": city, "Customer type": customer_type,
             "Gender": gender, "Product line": product_line, "Unit price": unit_price,
@@ -236,9 +224,6 @@ def relatorio_por_dia_com_variacoes(dia, data_df):
             df_dia = df_dia[~df_dia[col].astype(str).str.lower().isin(['total', 'quantity'])]
         if col in df_dia_anterior.columns:
             df_dia_anterior = df_dia_anterior[~df_dia_anterior[col].astype(str).str.lower().isin(['total', 'quantity'])]
-
-    if df_dia.empty:
-        return {}
 
     is_first_day_with_data = df_dia_anterior.empty and not df_dia.empty
 
