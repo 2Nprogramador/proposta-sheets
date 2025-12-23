@@ -848,18 +848,10 @@ else:
 # 2. CRIA O DATAFRAME BLINDADO
 # Aqui comparamos apenas a PARTE DA DATA (dt.date) da coluna 'Data' com o seu filtro.
 # O .copy() garante que mexer nisso não afeta o resto.
+# Criei este filtro explícito antes de chamar as funções de cálculo
 df_dia_raw = df[df['Data'].dt.date == data_filtro].copy()
 
-# 3. VERIFICAÇÃO DE SEGURANÇA (Opcional - Debug)
-# Se por acaso o filtro falhar, paramos tudo.
-if not df_dia_raw.empty:
-    datas_encontradas = df_dia_raw['Data'].dt.date.unique()
-    if len(datas_encontradas) > 1 or datas_encontradas[0] != data_filtro:
-        st.error(f"ERRO CRÍTICO: O filtro de data falhou. Foram encontrados dados de: {datas_encontradas}")
-        st.stop()
-
-# 4. GERA OS INSIGHTS USANDO APENAS O DF DO DIA
-# A função 'processar_insights_criativos' recebe 'df_dia_raw', que contém SÓ o dia escolhido.
+# Agora a função calcula os dados usando APENAS esse pedaço filtrado
 insights = processar_insights_criativos(df_dia_raw)
 
 # ==============================================================================
