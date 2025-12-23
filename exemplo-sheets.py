@@ -373,7 +373,7 @@ if "request_type" in st.query_params:
             st.json({"erro": "Nenhum dado encontrado para a data informada."})
             st.stop()
 
-        # MAPEAMENTO COMPLETO (ATUALIZADO COM NOVOS RELATÓRIOS)
+        # MAPEAMENTO COMPLETO
         mapping = {
             # --- Relatórios de Soma (Vendas e Quantidade) ---
             "total_por_cidade": ("total_por_cidade", "variacao_cidade", "sum"),
@@ -381,13 +381,13 @@ if "request_type" in st.query_params:
             "total_por_tipo_cliente": ("total_por_tipo_cliente", "variacao_tipo_cliente", "sum"),
             "total_por_payment": ("total_por_payment", "variacao_payment", "sum"),
             "total_por_genero": ("total_por_genero", "variacao_genero", "sum"),
-            "vendas_por_hora": ("vendas_por_hora", "var_vendas_por_hora", "sum"), # Reutiliza lógica de soma (tem coluna Total)
+            "vendas_por_hora": ("vendas_por_hora", "var_vendas_por_hora", "sum"),
             
             # --- Relatórios de Distribuição (Crosstabs) ---
             "distribuicao_cidade_tipo": ("crosstab_cidade_tipo_cliente", "variacao_cidade_tipo_cliente", "cross"),
             "distribuicao_cidade_genero_tipo": ("crosstab_cidade_genero", "variacao_cidade_genero", "cross"),
             
-            # --- NOVOS: Relatórios de Métrica Única (Ticket Médio, Rating) ---
+            # --- NOVOS: Relatórios de Métrica Única ---
             "ticket_medio_cidade": ("ticket_medio_cidade", "var_ticket_medio_cidade", "metric"),
             "rating_produto": ("rating_produto", "var_rating_produto", "metric"),
             "rating_pagamento": ("rating_pagamento", "var_rating_pagamento", "metric")
@@ -399,30 +399,48 @@ if "request_type" in st.query_params:
             df_main = relatorio_api[key_data]
             df_var = relatorio_api[key_var]
 
+            # 1. CONSTRUÇÃO DO DATAFRAME
             if report_type == "sum":
-                # Lógica para Total e Quantidade (e Hora que tem Total)
-                # O rename ignora colunas que não existem, então funciona para hora tb
                 df_final = pd.concat([
                     df_main, 
                     df_var.rename(columns={"Total": "Var. Total", "Quantity": "Var. Quantity"})
                 ], axis=1)
                 
             elif report_type == "metric":
-                # Lógica para Ticket Médio e Ratings
-                # Adiciona o prefixo "Var. " automaticamente no nome da coluna (ex: Var. Ticket Médio)
                 df_final = pd.concat([
                     df_main,
                     df_var.add_prefix("Var. ")
                 ], axis=1)
                 
-            else:
-                # Lógica para Distribuições (Crosstabs) - Adiciona sufixo (Var)
+            else: # cross
                 df_final = pd.concat([
                     df_main, 
                     df_var.add_suffix(" (Var)")
                 ], axis=1).fillna(0)
 
-            # Preenche NaN com 0 ou null e converte para dicionário
+            # 2. NORMALIZAÇÃO (ARREDONDAMENTO) PARA IGUALAR AO APP
+            # ====================================================
+            if report_type == "sum":
+                # Arredonda colunas de Dinheiro (Total) para 2 casas
+                cols_money = [c for c in df_final.columns if "Total" in c]
+                df_final[cols_money] = df_final[cols_money].round(2)
+                
+                # Converte colunas de Quantidade para Inteiro (sem decimal)
+                cols_qty = [c for c in df_final.columns if "Quantity" in c]
+                df_final[cols_qty] = df_final[cols_qty].fillna(0).astype(int)
+
+            elif report_type == "metric":
+                # Verifica se é Rating (1 casa decimal) ou Ticket (2 casas decimais)
+                # Procura por 'Rating' em qualquer coluna
+                is_rating = any("Rating" in c for c in df_final.columns)
+                decimals = 1 if is_rating else 2
+                df_final = df_final.round(decimals)
+
+            else: # cross
+                # Distribuições são sempre números inteiros
+                df_final = df_final.fillna(0).astype(int)
+
+            # 3. ENVIO DO JSON
             st.json(df_final.fillna(0).reset_index().to_dict(orient="records"))
             st.stop()
         else:
