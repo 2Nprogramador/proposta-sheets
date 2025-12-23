@@ -1005,38 +1005,47 @@ with col2:
             st.plotly_chart(fig_ticket, use_container_width=True)
 
 # === NOVO INSIGHT 3: Qualidade vs Faturamento (Adicionado ao final da Coluna 1 ou 2, escolhi 1 para balancear) ===
-with col1:
+with col1: # Ou with col2
     if insights:
         st.markdown("---")
         st.markdown("##### ⭐ Qualidade vs. Faturamento (Matriz)")
         
-        # --- CORREÇÃO AQUI ---
-        # 1. Primeiro, carregamos o dataframe do dicionário 'insights'
+        # 1. PEGAR O DATAFRAME DO DICIONÁRIO (Isso evita o NameError)
+        # A função retornou um dicionário, então extraímos a chave 'rating_faturamento'
         df_rating = insights['rating_faturamento'].copy()
         
-        # 2. Definimos o índice (para o nome do produto não ficar repetido como coluna e index)
+        # 2. DEFINIR ÍNDICE E SELECIONAR COLUNAS
+        # Define 'Product line' como índice para ficar fixo à esquerda
         df_rating = df_rating.set_index('Product line')
-
-        # 3. Agora sim filtramos as colunas (pois a variável df_rating já existe)
-        df_rating = df_rating[['Rating_Medio', 'Faturamento']]
-        # ---------------------
         
-        # 4. Exibe
+        # Garante que mostraremos APENAS o Rating e o Faturamento (remove colunas extras se houver)
+        df_rating = df_rating[['Rating_Medio', 'Faturamento']]
+        
+        # 3. EXIBIR COM FORMATAÇÃO
         st.dataframe(
             df_rating.style.format({
-                'Rating_Medio': '{:.2f}', 
-                'Faturamento': 'R${:.2f}'
+                'Rating_Medio': '{:.2f}',       # Ex: 4.50
+                'Faturamento': 'R$ {:,.2f}'     # Ex: R$ 1,500.00
             }), 
             use_container_width=True
         )
         
+        # 4. GRÁFICO DE DISPERSÃO (Bolhas)
         with st.expander("Ver Matriz de Qualidade"):
             fig_qualidade = px.scatter(
-                insights['rating_faturamento'], x='Faturamento', y='Rating_Medio',
-                size='Faturamento', color='Product line',
+                insights['rating_faturamento'], # Usa o dataframe original com a coluna 'Product line'
+                x='Faturamento', 
+                y='Rating_Medio',
+                size='Faturamento', 
+                color='Product line',
                 title="Produtos: Avaliação vs. Receita",
                 hover_name='Product line'
             )
-            media_geral_rating = df_dia_raw['Rating'].mean()
-            fig_qualidade.add_hline(y=media_geral_rating, line_dash="dot", annotation_text="Média Geral")
+            
+            # Adiciona linha de média geral
+            # (Note: df_dia_raw deve estar disponível no escopo, vindo do filtro de data)
+            if 'df_dia_raw' in locals() and not df_dia_raw.empty:
+                 media_geral_rating = df_dia_raw['Rating'].mean()
+                 fig_qualidade.add_hline(y=media_geral_rating, line_dash="dot", annotation_text="Média Geral")
+            
             st.plotly_chart(fig_qualidade, use_container_width=True)
