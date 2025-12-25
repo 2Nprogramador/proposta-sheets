@@ -238,7 +238,7 @@ def relatorio_por_dia_com_variacoes(dia, data_df):
 
     is_first_day_with_data = df_dia_anterior.empty and not df_dia.empty
 
-    def calcular_alertas_dia(relatorio):
+def calcular_alertas_dia(relatorio):
     """
     Recebe o dicionário de relatórios e retorna listas de mensagens de alerta.
     """
