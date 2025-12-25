@@ -238,6 +238,61 @@ def relatorio_por_dia_com_variacoes(dia, data_df):
 
     is_first_day_with_data = df_dia_anterior.empty and not df_dia.empty
 
+    def calcular_alertas_dia(relatorio):
+    """
+    Recebe o dicionário de relatórios e retorna listas de mensagens de alerta.
+    """
+    alertas_positivos = []
+    alertas_negativos = []
+
+    # 1. Cidades acima de 30k
+    cidades_acima_30000 = relatorio['total_por_cidade'][relatorio['total_por_cidade']['Total'] > 30000]
+    if not cidades_acima_30000.empty:
+        cidades_str = ", ".join(cidades_acima_30000.index)
+        alertas_positivos.append(f"As cidades **{cidades_str}** ultrapassaram R$30.000 em vendas totais.")
+
+    # 2. Queda de 30% nas cidades
+    total_atual_cidade = relatorio['total_por_cidade']['Total']
+    variacao_cidade_abs = relatorio['variacao_cidade']['Total']
+    total_anterior_cidade = total_atual_cidade - variacao_cidade_abs
+    
+    # Evitar divisão por zero ou nulos
+    valid_indices = total_anterior_cidade[total_anterior_cidade > 0].index
+    
+    if not valid_indices.empty:
+        variacao_percentual_cidade = (variacao_cidade_abs.loc[valid_indices] / total_anterior_cidade.loc[valid_indices]) * 100
+        cidades_queda = variacao_percentual_cidade[variacao_percentual_cidade < -30]
+        if not cidades_queda.empty:
+            cidades_str = ", ".join(cidades_queda.index)
+            alertas_negativos.append(f"As cidades **{cidades_str}** tiveram uma queda superior a 30% nas vendas.")
+
+    # 3. Aumento de Pix > 30%
+    if "Pix" in relatorio['total_por_payment'].index:
+        total_pix = relatorio['total_por_payment'].loc["Pix", "Total"]
+        if "Pix" in relatorio['variacao_payment'].index:
+            variacao_pix = relatorio['variacao_payment'].loc["Pix", "Total"]
+        else:
+            variacao_pix = 0
+            
+        if pd.notna(variacao_pix):
+            total_anterior_pix = total_pix - variacao_pix
+            if total_anterior_pix > 0:
+                variacao_perc = (variacao_pix / total_anterior_pix) * 100
+                if variacao_perc > 30:
+                    alertas_positivos.append(f"O método de pagamento **Pix** apresentou um aumento superior a 30% ({variacao_perc:.1f}%) nas vendas.")
+
+    # 4. Produtos > 400 vendas
+    produtos_acima_400 = relatorio['total_por_linha_produto'][relatorio['total_por_linha_produto']['Quantity'] > 400]
+    if not produtos_acima_400.empty:
+        produtos_str = ", ".join(produtos_acima_400.index)
+        alertas_positivos.append(f"Os produtos **{produtos_str}** tiveram mais de 400 vendas.")
+        
+    return {
+        "alertas_positivos": alertas_positivos,
+        "alertas_negativos": alertas_negativos,
+        "total_alertas": len(alertas_positivos) + len(alertas_negativos)
+    }
+
     # --- HELPER: Soma (já existia) ---
     def calcular_totais_e_variacao(df_atual, df_anterior, coluna_agrupadora):
         total_atual = df_atual.groupby(coluna_agrupadora)[['Total', 'Quantity']].sum()
@@ -364,8 +419,11 @@ df = load_data_from_gsheets()
 if "request_type" in st.query_params:
     request_type = st.query_params.get("request_type")
     target_date = st.query_params.get("target_date")
-    report_name = st.query_params.get("report_name")
+    report_name = st.query_params.get("report_name") # Opcional se for request de alertas
 
+    # ---------------------------------------------------------
+    # ROTA 1: BUSCAR RELATÓRIOS (TABELAS)
+    # ---------------------------------------------------------
     if request_type == "get_report" and target_date and report_name:
         relatorio_api = relatorio_por_dia_com_variacoes(pd.to_datetime(target_date), df)
         
@@ -387,7 +445,7 @@ if "request_type" in st.query_params:
             "distribuicao_cidade_tipo": ("crosstab_cidade_tipo_cliente", "variacao_cidade_tipo_cliente", "cross"),
             "distribuicao_cidade_genero_tipo": ("crosstab_cidade_genero", "variacao_cidade_genero", "cross"),
             
-            # --- NOVOS: Relatórios de Métrica Única ---
+            # --- Relatórios de Métrica Única ---
             "ticket_medio_cidade": ("ticket_medio_cidade", "var_ticket_medio_cidade", "metric"),
             "rating_produto": ("rating_produto", "var_rating_produto", "metric"),
             "rating_pagamento": ("rating_pagamento", "var_rating_pagamento", "metric")
@@ -418,26 +476,19 @@ if "request_type" in st.query_params:
                     df_var.add_suffix(" (Var)")
                 ], axis=1).fillna(0)
 
-            # 2. NORMALIZAÇÃO (ARREDONDAMENTO) PARA IGUALAR AO APP
-            # ====================================================
+            # 2. NORMALIZAÇÃO (ARREDONDAMENTO)
             if report_type == "sum":
-                # Arredonda colunas de Dinheiro (Total) para 2 casas
                 cols_money = [c for c in df_final.columns if "Total" in c]
                 df_final[cols_money] = df_final[cols_money].round(2)
-                
-                # Converte colunas de Quantidade para Inteiro (sem decimal)
                 cols_qty = [c for c in df_final.columns if "Quantity" in c]
                 df_final[cols_qty] = df_final[cols_qty].fillna(0).astype(int)
 
             elif report_type == "metric":
-                # Verifica se é Rating (1 casa decimal) ou Ticket (2 casas decimais)
-                # Procura por 'Rating' em qualquer coluna
                 is_rating = any("Rating" in c for c in df_final.columns)
                 decimals = 1 if is_rating else 2
                 df_final = df_final.round(decimals)
 
             else: # cross
-                # Distribuições são sempre números inteiros
                 df_final = df_final.fillna(0).astype(int)
 
             # 3. ENVIO DO JSON
@@ -447,6 +498,29 @@ if "request_type" in st.query_params:
             st.json({"erro": f"Relatório '{report_name}' não encontrado no mapeamento."})
             st.stop()
 
+    # ---------------------------------------------------------
+    # ROTA 2: BUSCAR ALERTAS (NOVA)
+    # ---------------------------------------------------------
+    elif request_type == "get_alerts" and target_date:
+        # 1. Gera os dados do relatório para o dia alvo
+        relatorio_api = relatorio_por_dia_com_variacoes(pd.to_datetime(target_date), df)
+        
+        # 2. Se não houver dados, retorna listas vazias
+        if not relatorio_api:
+            st.json({
+                "alertas_positivos": [], 
+                "alertas_negativos": [], 
+                "total_alertas": 0,
+                "status": "sem_dados"
+            })
+            st.stop()
+
+        # 3. Calcula os alertas usando a nova função
+        resultado_alertas = calcular_alertas_dia(relatorio_api)
+        
+        # 4. Retorna o JSON limpo para o n8n
+        st.json(resultado_alertas)
+        st.stop()
 # =================================================================
 
 
